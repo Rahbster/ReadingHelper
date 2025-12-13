@@ -20,7 +20,10 @@
         <div id="reader-view">
             <div class="input-area">
                 <textarea id="story-input" placeholder="Paste a story here..."></textarea>
-                <button id="load-story-btn" class="theme-button">Load Story</button>
+                <div class="input-buttons">
+                    <button id="choose-story-btn" class="theme-button">Choose a Story</button>
+                    <button id="load-story-btn" class="theme-button">Load Story</button>
+                </div>
             </div>
             <div id="story-display" class="story-container">
                 <p>The story will appear here. Tap on any word to hear it read aloud.</p>
@@ -31,13 +34,28 @@
             <h2>Tricky Words</h2>
             <p>This list shows the words that have been tapped the most, helping you see where to focus.</p>
             <div class="dashboard-controls">
-                <button id="clear-stats-btn" class="theme-button destructive">Clear All Stats</button>
+                <button id="clear-stats-btn" class="theme-button">Clear Word Stats</button>
+                <button id="reset-app-btn" class="theme-button destructive">Reset App</button>
             </div>
             <div id="tricky-words-list">
                 <!-- Word stats will be populated here by JavaScript -->
             </div>
         </div>
     </main>
+
+    <!-- Story Library Modal -->
+    <div id="story-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Choose a Story</h2>
+            <div id="story-list">
+                <!-- Story links will be populated here -->
+            </div>
+            <button id="close-story-modal-btn" class="theme-button">Close</button>
+        </div>
+    </div>
+
+    <!-- Syllable breakdown pop-up -->
+    <div id="syllable-popup" class="syllable-popup hidden"></div>
 
     <script>
         if ('serviceWorker' in navigator) {

@@ -1,0 +1,22 @@
+[
+  {
+    "title": "Goldilocks and the Three Bears",
+    "path": "stories/goldilocks/",
+    "level": 1
+  },
+  {
+    "title": "The Three Little Pigs",
+    "path": "stories/three_pigs/",
+    "level": 1
+  },
+  {
+    "title": "Little Red Riding Hood",
+    "path": "stories/little_red/",
+    "level": 2
+  },
+  {
+    "title": "Room on the Broom",
+    "path": "stories/room_on_the_broom/",
+    "level": 2
+  }
+]
