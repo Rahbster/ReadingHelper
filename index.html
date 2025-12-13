@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reading Helper</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    <meta name="theme-color" content="#A9C9FF"/>
+</head>
+<body>
+
+    <header>
+        <h1>Reading Helper</h1>
+        <button id="toggle-dashboard-btn" class="theme-button">Dashboard</button>
+    </header>
+
+    <main>
+        <div id="reader-view">
+            <div class="input-area">
+                <textarea id="story-input" placeholder="Paste a story here..."></textarea>
+                <button id="load-story-btn" class="theme-button">Load Story</button>
+            </div>
+            <div id="story-display" class="story-container">
+                <p>The story will appear here. Tap on any word to hear it read aloud.</p>
+            </div>
+        </div>
+
+        <div id="dashboard-view" class="hidden">
+            <h2>Tricky Words</h2>
+            <p>This list shows the words that have been tapped the most, helping you see where to focus.</p>
+            <div class="dashboard-controls">
+                <button id="clear-stats-btn" class="theme-button destructive">Clear All Stats</button>
+            </div>
+            <div id="tricky-words-list">
+                <!-- Word stats will be populated here by JavaScript -->
+            </div>
+        </div>
+    </main>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').then(registration => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                }, err => {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+    </script>
+    <script src="js/main.js" type="module"></script>
+
+</body>
+</html>
