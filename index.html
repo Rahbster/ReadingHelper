@@ -13,16 +13,29 @@
 
     <header>
         <h1>Reading Helper</h1>
-        <button id="toggle-dashboard-btn" class="theme-button">Dashboard</button>
+        <div class="header-buttons">
+            <button id="choose-story-btn" class="theme-button">Choose a Story</button>
+            <button id="toggle-dashboard-btn" class="theme-button">Dashboard</button>
+        </div>
     </header>
 
     <main>
         <div id="reader-view">
-            <div class="input-area">
+            <div id="creator-area" class="input-area hidden">
                 <textarea id="story-input" placeholder="Paste a story here..."></textarea>
+                <div class="json-editors">
+                    <div class="json-editor">
+                        <label for="phonetics-input">Phonetics Guide (JSON)</label>
+                        <textarea id="phonetics-input" placeholder='{ "example": "ex-am-ple" }'></textarea>
+                    </div>
+                    <div class="json-editor">
+                        <label for="pronunciations-input">Pronunciation Guide (JSON)</label>
+                        <textarea id="pronunciations-input" placeholder='{ "was": "wuz" }'></textarea>
+                    </div>
+                </div>
                 <div class="input-buttons">
-                    <button id="choose-story-btn" class="theme-button">Choose a Story</button>
-                    <button id="load-story-btn" class="theme-button">Load Story</button>
+                    <button id="add-image-btn" class="theme-button">Add Image</button>
+                    <button id="save-story-btn" class="theme-button">Save Story</button>
                 </div>
             </div>
             <div id="story-display" class="story-container">
@@ -34,6 +47,7 @@
             <h2>Tricky Words</h2>
             <p>This list shows the words that have been tapped the most, helping you see where to focus.</p>
             <div class="dashboard-controls">
+                <button id="creator-mode-btn" class="theme-button">Enter Creator Mode</button>
                 <button id="clear-stats-btn" class="theme-button">Clear Word Stats</button>
                 <button id="reset-app-btn" class="theme-button destructive">Reset App</button>
             </div>
@@ -50,6 +64,13 @@
             <div id="story-list">
                 <!-- Story links will be populated here -->
             </div>
+            <hr>
+            <h4>Or Load from...</h4>
+            <div class="load-options">
+                <button id="load-from-computer-btn" class="theme-button">Load from Computer</button>
+                <button id="load-from-url-btn" class="theme-button">Load from Web...</button>
+            </div>
+            <br>
             <button id="close-story-modal-btn" class="theme-button">Close</button>
         </div>
     </div>

@@ -39,6 +39,11 @@ header h1 {
     color: var(--primary-hover);
 }
 
+.header-buttons {
+    display: flex;
+    gap: 10px;
+}
+
 .theme-button {
     background-color: var(--primary-color);
     color: white;
@@ -79,14 +84,39 @@ header h1 {
 }
 
 #story-input {
+    height: 200px;
+}
+
+.json-editors {
+    display: flex;
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.json-editor {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.json-editor label {
+    margin-bottom: 5px;
+    font-size: 0.8em;
+    font-weight: bold;
+    color: var(--primary-hover);
+}
+
+/* Common style for all textareas in creator mode */
+#story-input,
+.json-editor textarea {
     width: 100%;
-    height: 150px;
     padding: 10px;
     border: 2px solid #ddd;
     border-radius: 8px;
     font-family: var(--font-main);
     font-size: 1em;
     box-sizing: border-box;
+    resize: vertical;
 }
 
 .story-container {
@@ -189,8 +219,9 @@ header h1 {
 #story-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
     margin: 20px 0;
+    max-height: 50vh;
+    overflow-y: auto; /* Re-enable scrolling on the main list container */
 }
 
 .story-item {
@@ -202,6 +233,40 @@ header h1 {
     font-weight: bold;
 }
 
+.story-group {
+    border: 1px solid #eee;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.story-group-header {
+    background-color: #eaf2f8;
+    padding: 10px 15px;
+    font-weight: bold;
+    cursor: pointer;
+    position: relative;
+    user-select: none;
+    border-radius: 8px; /* Apply radius here */
+}
+
+.story-group-header::before {
+    content: '▼';
+    position: absolute;
+    right: 15px;
+    transition: transform 0.2s ease;
+}
+
+.story-group-header.collapsed::before {
+    transform: rotate(-90deg);
+}
+
+.story-group-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+    /* This will not scroll; the parent list will */
+}
 .story-item:hover {
     background-color: #e0f0ff;
 }
@@ -226,4 +291,13 @@ header h1 {
 .syllable-popup.show {
     opacity: 1;
     transform: translateY(0);
+}
+
+.load-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch; /* Make buttons full width */
+    justify-content: center;
+    margin-top: 1rem;
 }

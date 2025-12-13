@@ -1,8 +1,9 @@
 const dom = {
     storyInput: document.getElementById('story-input'),
-    loadStoryBtn: document.getElementById('load-story-btn'),
     storyDisplay: document.getElementById('story-display'),
     chooseStoryBtn: document.getElementById('choose-story-btn'),
+    creatorArea: document.getElementById('creator-area'),
+    creatorModeBtn: document.getElementById('creator-mode-btn'),
     toggleDashboardBtn: document.getElementById('toggle-dashboard-btn'),
     readerView: document.getElementById('reader-view'),
     dashboardView: document.getElementById('dashboard-view'),
@@ -14,17 +15,26 @@ const dom = {
     storyModal: document.getElementById('story-modal'),
     storyList: document.getElementById('story-list'),
     closeStoryModalBtn: document.getElementById('close-story-modal-btn'),
+    loadFromUrlBtn: document.getElementById('load-from-url-btn'),
+    loadFromComputerBtn: document.getElementById('load-from-computer-btn'),
+    // Creator mode buttons
+    addImageBtn: document.getElementById('add-image-btn'),
+    phoneticsInput: document.getElementById('phonetics-input'),
+    pronunciationsInput: document.getElementById('pronunciations-input'),
+    saveStoryBtn: document.getElementById('save-story-btn'),
 };
 
 const WORD_STATS_KEY = 'readingHelperWordStats';
 let currentPronunciations = {}; // Holds the pronunciation guide for the currently loaded story
 let currentStoryPath = '';      // Holds the base path for the current story module
 let currentPhonetics = {};      // Holds the phonetic guide for the currently loaded story
+let localImageUrls = {};        // Holds ObjectURLs for locally loaded images
 let pressTimer = null;
 let isLongPress = false;
 let popupWasShown = false; // Add a new flag to track if the popup was actually displayed
 let activeWordElement = null; // Keep track of the element being pressed
 const LONG_PRESS_DURATION = 400; // 400ms for a long press
+let isCreatorMode = false;
 
 /**
  * Unregisters service workers, clears caches, and all local storage to perform a full reset.
@@ -73,12 +83,17 @@ async function init() {
  * Sets up all the event listeners for the application.
  */
 function setupEventListeners() {
-    dom.loadStoryBtn.addEventListener('click', renderStory);
     dom.chooseStoryBtn.addEventListener('click', openStoryModal);
     dom.toggleDashboardBtn.addEventListener('click', toggleDashboard);
     dom.clearStatsBtn.addEventListener('click', clearAllStats);
     dom.resetAppBtn.addEventListener('click', resetApplication);
     dom.closeStoryModalBtn.addEventListener('click', closeStoryModal);
+    dom.creatorModeBtn.addEventListener('click', toggleCreatorMode);
+    dom.loadFromUrlBtn.addEventListener('click', handleLoadFromUrl);
+    dom.loadFromComputerBtn.addEventListener('click', handleLoadFromComputer);
+    dom.addImageBtn.addEventListener('click', addImageToStory);
+    dom.storyList.addEventListener('click', handleStoryListClick);
+    dom.saveStoryBtn.addEventListener('click', saveUserStory);
 
     // Press and hold logic for syllable pop-up
     dom.storyDisplay.addEventListener('mousedown', handlePressStart);
@@ -93,19 +108,31 @@ function setupEventListeners() {
  * Fetches the story manifest and populates the story selection modal.
  */
 async function loadStoryLibrary() {
+    const defaultStoryUrl = 'https://rahbster.github.io/ReadingHelper/';
+    const libraryUrl = new URL('stories.json', defaultStoryUrl).href;
+
     try {
-        const response = await fetch('stories.json');
-        if (!response.ok) throw new Error('Could not load story library.');
+        const response = await fetch(libraryUrl);
+        if (!response.ok) throw new Error(`Could not load default story library from ${libraryUrl}`);
         const stories = await response.json();
 
-        dom.storyList.innerHTML = stories.map(story =>
-            `<div class="story-item" data-path="${story.path}">${story.title}</div>`
-        ).join('');
+        const newStoriesHtml = stories.map(story => {
+            const fullStoryPath = new URL(story.path, defaultStoryUrl).href;
+            return `<div class="story-item" data-path="${fullStoryPath}">${story.title}</div>`;
+        }).join('');
 
-        dom.storyList.addEventListener('click', handleStorySelection);
+        const groupHostname = new URL(defaultStoryUrl).hostname;
+        const newGroupHtml = `
+            <div class="story-group" data-source="${groupHostname}">
+                <div class="story-group-header">${groupHostname}</div>
+                <div class="story-group-content">${storyItemsHtml}</div>
+            </div>
+        `;
+
+        dom.storyList.innerHTML = newGroupHtml;
     } catch (error) {
         console.error(error);
-        dom.chooseStoryBtn.style.display = 'none'; // Hide button if library fails to load
+        dom.storyList.innerHTML = `<p>Could not load default stories. You can still load stories from your computer or another URL.</p>`;
     }
 }
 
@@ -114,12 +141,7 @@ async function loadStoryLibrary() {
  * making each word interactive.
  */
 function renderStory() {
-    const text = dom.storyInput.value;
-    if (!text.trim()) {
-        dom.storyDisplay.innerHTML = '<p>Please paste a story into the text box above and click "Load Story".</p>';
-        return;
-    }
-
+    const text = dom.storyInput.value; // We still use storyInput as the source of truth
     // Split by spaces and punctuation, but keep them for rendering.
     // This regex splits on spaces, newlines, and common punctuation.
     const parts = text.split(/(\[IMAGE:.*?\]|[ \n.,!?;:"'()])/);
@@ -131,7 +153,13 @@ function renderStory() {
         const imageMatch = part.match(/^\[IMAGE:(.*?)\]$/);
         if (imageMatch) {
             const imagePath = imageMatch[1].trim();
-            const fullImagePath = `${currentStoryPath}${imagePath}`;
+            const imageName = imagePath.split('/').pop(); // e.g., 'house.png'
+            
+            // Use a local object URL if available, otherwise construct path from web.
+            const fullImagePath = localImageUrls[imageName] 
+                ? localImageUrls[imageName]
+                : `${currentStoryPath}${imagePath}`;
+
             return `<img src="${fullImagePath}" alt="Story illustration" class="story-image">`;
         }
 
@@ -274,6 +302,32 @@ function clearAllStats() {
 }
 
 /**
+ * Toggles the Story Creator mode.
+ */
+function toggleCreatorMode() {
+    isCreatorMode = !isCreatorMode;
+    dom.creatorArea.classList.toggle('hidden', !isCreatorMode);
+    dom.storyDisplay.classList.toggle('hidden', isCreatorMode);
+
+    if (isCreatorMode) {
+        dom.creatorModeBtn.textContent = 'Exit Creator Mode';
+        // If dashboard is not hidden, switch back to reader view to show the creator
+        if (!dom.dashboardView.classList.contains('hidden')) {
+            toggleDashboard();
+        }
+        dom.storyInput.value = ''; // Clear the text area
+        dom.storyInput.placeholder = 'Write your new story here...';
+        // Also clear the JSON inputs and set placeholder text
+        dom.phoneticsInput.value = '{\n  \n}';
+        dom.pronunciationsInput.value = '{\n  \n}';
+
+    } else {
+        dom.creatorModeBtn.textContent = 'Enter Creator Mode';
+        renderStory(); // Render whatever is in the text area when exiting
+    }
+}
+
+/**
  * Opens the story selection modal.
  */
 function openStoryModal() {
@@ -288,37 +342,177 @@ function closeStoryModal() {
 }
 
 /**
- * Handles the click on a story from the modal list.
+ * Handles clicks within the story list, delegating to either expand/collapse
+ * a group or select a story.
  * @param {Event} event The click event.
  */
-async function handleStorySelection(event) {
+async function handleStoryListClick(event) {
     const target = event.target;
-    if (!target.classList.contains('story-item')) return;
 
-    const path = target.dataset.path;
-    currentStoryPath = path; // Store the base path for the loaded story
+    if (target.classList.contains('story-group-header')) {
+        const isCollapsed = target.classList.contains('collapsed');
 
-    // Fetch all parts of the story module
-    try {
-        const [storyResponse, phoneticsResponse, pronunciationsResponse] = await Promise.all([
-            fetch(`${path}story.txt`),
-            fetch(`${path}phonetics.json`).catch(() => ({ json: () => ({}) })), // Gracefully fail
-            fetch(`${path}pronunciations.json`).catch(() => ({ json: () => ({}) })) // Gracefully fail
-        ]);
+        // Collapse all groups first
+        dom.storyList.querySelectorAll('.story-group-header').forEach(header => {
+            header.classList.add('collapsed');
+            header.nextElementSibling.classList.add('hidden');
+        });
 
-        const storyText = await storyResponse.text();
-        currentPhonetics = await phoneticsResponse.json();
-        currentPronunciations = await pronunciationsResponse.json();
+        // If the clicked group was collapsed, expand it.
+        // This makes it so clicking an already open group will just close it.
+        target.classList.toggle('collapsed', !isCollapsed);
+        const content = target.nextElementSibling;
+        content.classList.toggle('hidden', !isCollapsed);
+    } else if (target.classList.contains('story-item')) {
+        const path = target.dataset.path;
+        currentStoryPath = path; // Store the base path for the loaded story
 
-        dom.storyInput.value = storyText;
-        closeStoryModal();
-        renderStory(); // Automatically load the story
-    } catch (error) {
-        console.error(`Failed to load story module from ${path}`, error);
-        alert('Could not load the selected story.');
+        localImageUrls = {}; // Clear local images when loading a built-in story
+
+        // Fetch all parts of the story module
+        try {
+            const [storyResponse, phoneticsResponse, pronunciationsResponse] = await Promise.all([
+                fetch(`${path}story.txt`),
+                fetch(`${path}phonetics.json`).catch(() => ({ json: () => ({}) })), // Gracefully fail
+                fetch(`${path}pronunciations.json`).catch(() => ({ json: () => ({}) })) // Gracefully fail
+            ]);
+
+            const storyText = await storyResponse.text();
+            currentPhonetics = await phoneticsResponse.json();
+            currentPronunciations = await pronunciationsResponse.json();
+
+            dom.storyInput.value = storyText;
+            closeStoryModal();
+            renderStory(); // Automatically load the story
+        } catch (error) {
+            console.error(`Failed to load story module from ${path}`, error);
+            alert('Could not load the selected story.');
+        }
     }
 }
 
+/**
+ * Handles loading a story from a provided URL.
+ */
+async function handleLoadFromUrl() {
+    let baseUrl = prompt('Please enter the URL to the story folder:', 'https://rahbster.github.io/ReadingHelper/');
+
+    if (!baseUrl) {
+        // User cancelled the prompt
+        return;
+    }
+
+    // Ensure the base URL ends with a slash
+    if (!baseUrl.endsWith('/')) {
+        baseUrl += '/';
+    }
+
+    const libraryUrl = new URL('stories.json', baseUrl).href;
+
+    try {
+        // First, collapse all existing groups
+        dom.storyList.querySelectorAll('.story-group-header').forEach(header => {
+            header.classList.add('collapsed');
+            header.nextElementSibling.classList.add('hidden');
+        });
+
+        const response = await fetch(libraryUrl);
+        if (!response.ok) throw new Error(`Failed to fetch story library from ${libraryUrl}`);
+
+        const stories = await response.json();
+        if (!Array.isArray(stories)) throw new Error('The provided URL did not point to a valid story library array.');
+
+        // Create the HTML for the new stories and append it to the list.
+        const newStoriesHtml = stories.map(story => {
+            // The full path to the story's folder is the base URL of the library + the story's relative path.
+            const fullStoryPath = new URL(story.path, baseUrl).href;
+            return `<div class="story-item" data-path="${fullStoryPath}">${story.title}</div>`;
+        }).join('');
+
+        const groupHostname = new URL(baseUrl).hostname;
+
+        // Check if a group from this source already exists and remove it.
+        const existingGroup = dom.storyList.querySelector(`.story-group[data-source="${groupHostname}"]`);
+        if (existingGroup) {
+            existingGroup.remove();
+        }
+
+        const newGroupHtml = `
+            <div class="story-group" data-source="${groupHostname}">
+                <div class="story-group-header">${groupHostname}</div>
+                <div class="story-group-content">${newStoriesHtml}</div>
+            </div>
+        `;
+
+        dom.storyList.insertAdjacentHTML('beforeend', newGroupHtml);
+        alert(`${stories.length} stories from the web have been added to the list.`);
+
+    } catch (error) {
+        console.error('Error loading story from URL:', error);
+        alert(`Could not load the story from the URL. Please check the URL and try again. Error: ${error.message}`);
+    }
+}
+
+/**
+ * Handles loading a story project from the user's local computer.
+ */
+async function handleLoadFromComputer() {
+    try {
+        const dirHandle = await window.showDirectoryPicker();
+
+        // Reset state for the new story
+        currentStoryPath = '';
+        localImageUrls = {};
+
+        // 1. Load story.txt
+        const storyFileHandle = await dirHandle.getFileHandle('story.txt');
+        const storyFile = await storyFileHandle.getFile();
+        dom.storyInput.value = await storyFile.text();
+
+        // 2. Load phonetics.json (optional)
+        try {
+            const phoneticsFileHandle = await dirHandle.getFileHandle('phonetics.json');
+            const phoneticsFile = await phoneticsFileHandle.getFile();
+            currentPhonetics = JSON.parse(await phoneticsFile.text());
+            dom.phoneticsInput.value = JSON.stringify(currentPhonetics, null, 2);
+        } catch (e) {
+            currentPhonetics = {};
+            dom.phoneticsInput.value = '{\n  \n}';
+        }
+
+        // 3. Load pronunciations.json (optional)
+        try {
+            const pronunciationsFileHandle = await dirHandle.getFileHandle('pronunciations.json');
+            const pronunciationsFile = await pronunciationsFileHandle.getFile();
+            currentPronunciations = JSON.parse(await pronunciationsFile.text());
+            dom.pronunciationsInput.value = JSON.stringify(currentPronunciations, null, 2);
+        } catch (e) {
+            currentPronunciations = {};
+            dom.pronunciationsInput.value = '{\n  \n}';
+        }
+
+        // 4. Load images from the 'images' subdirectory (optional)
+        try {
+            const imagesDirHandle = await dirHandle.getDirectoryHandle('images');
+            for await (const entry of imagesDirHandle.values()) {
+                if (entry.kind === 'file') {
+                    const imageFile = await entry.getFile();
+                    localImageUrls[entry.name] = URL.createObjectURL(imageFile);
+                }
+            }
+        } catch (e) {
+            // It's okay if the images directory doesn't exist.
+        }
+
+        closeStoryModal();
+        renderStory();
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Error loading story from computer:', error);
+            alert('Could not load the story. Please ensure you select a valid story folder.');
+        }
+    }
+}
 /**
  * Displays a pop-up with the syllabified word near the target element.
  * @param {string} word The word to display.
@@ -404,6 +598,147 @@ function handlePressEnd(event) {
 
     activeWordElement = null; // Reset the active element
     isLongPress = false;      // CRITICAL FIX: Reset the long press flag after every interaction.
+}
+
+/**
+ * Handles adding an image to the story text area.
+ * Uses the File System Access API to get a handle to a directory.
+ */
+async function addImageToStory() {
+    try {
+        const [fileHandle] = await window.showOpenFilePicker({
+            types: [{ description: 'Images', accept: { 'image/*': ['.png', '.gif', '.jpeg', '.jpg'] } }],
+        });
+
+        const file = await fileHandle.getFile();
+        const fileName = file.name;
+
+        // Get a handle to a 'user_stories' directory.
+        const root = await navigator.storage.getDirectory();
+        const userStoriesDir = await root.getDirectoryHandle('user_stories', { create: true });
+        const imagesDir = await userStoriesDir.getDirectoryHandle('images', { create: true });
+
+        // Write the file to the new location.
+        const newFileHandle = await imagesDir.getFileHandle(fileName, { create: true });
+        const writable = await newFileHandle.createWritable();
+        await writable.write(file);
+        await writable.close();
+
+        console.log(`Image '${fileName}' saved to 'user_stories/images/'`);
+
+        // Insert the image tag into the textarea at the current cursor position.
+        const imageTag = `[IMAGE: images/${fileName}]`;
+        const { selectionStart, selectionEnd, value } = dom.storyInput;
+        dom.storyInput.value = value.slice(0, selectionStart) + imageTag + value.slice(selectionEnd);
+
+    } catch (error) {
+        // It's common for users to cancel the file picker, so we only log non-AbortError errors.
+        if (error.name !== 'AbortError') {
+            console.error('Error adding image:', error);
+            alert('Could not add the image. Please ensure you are using a compatible browser (like Chrome or Edge) and have granted permissions.');
+        }
+    }
+}
+
+/**
+ * Saves the user-created story to the 'user_stories' directory.
+ */
+async function saveUserStory() {
+    const storyText = dom.storyInput.value.trim();
+    if (!storyText) {
+        alert('Please write a story before saving.');
+        return;
+    }
+
+    const title = prompt('Please enter a title for your story (this will be the folder name):');
+    if (!title) return; // User cancelled
+
+    const folderName = title.toLowerCase().replace(/\s+/g, '_').replace(/[^\w-]/g, '');
+    if (!folderName) {
+        alert('Invalid title. Please use letters and numbers.');
+        return;
+    }
+
+    // Validate and prepare JSON content
+    let phoneticsContent = dom.phoneticsInput.value.trim() || '{}';
+    let pronunciationsContent = dom.pronunciationsInput.value.trim() || '{}';
+
+    try {
+        JSON.parse(phoneticsContent);
+    } catch (e) {
+        alert(`The Phonetics Guide contains invalid JSON. Please correct it.\nError: ${e.message}`);
+        dom.phoneticsInput.focus();
+        return;
+    }
+
+    try {
+        JSON.parse(pronunciationsContent);
+    } catch (e) {
+        alert(`The Pronunciation Guide contains invalid JSON. Please correct it.\nError: ${e.message}`);
+        dom.pronunciationsInput.focus();
+        return;
+    }
+
+
+    try {
+        // Ask the user to pick a directory to save the story project into.
+        const dirHandle = await window.showDirectoryPicker();
+        const storyDirHandle = await dirHandle.getDirectoryHandle(folderName, { create: true });
+
+        // 1. Save the story.txt file
+        const storyFileHandle = await storyDirHandle.getFileHandle('story.txt', { create: true });
+        let writable = await storyFileHandle.createWritable();
+        await writable.write(storyText);
+        await writable.close();
+
+        // 2. Save the phonetics.json file
+        const phoneticsFileHandle = await storyDirHandle.getFileHandle('phonetics.json', { create: true });
+        writable = await phoneticsFileHandle.createWritable();
+        await writable.write(phoneticsContent);
+        await writable.close();
+
+        // 3. Save the pronunciations.json file
+        const pronunciationsFileHandle = await storyDirHandle.getFileHandle('pronunciations.json', { create: true });
+        writable = await pronunciationsFileHandle.createWritable();
+        await writable.write(pronunciationsContent);
+        await writable.close();
+
+
+        // 4. Find all images in the text and save them.
+        const imageRegex = /\[IMAGE:\s*images\/(.*?)\s*\]/g;
+        let match;
+        const imageSaves = [];
+
+        // Get handle to the OPFS images directory
+        const root = await navigator.storage.getDirectory();
+        const opfsImagesDir = await root.getDirectoryHandle('user_stories', { create: true }).then(d => d.getDirectoryHandle('images', { create: true }));
+
+        while ((match = imageRegex.exec(storyText)) !== null) {
+            const imageName = match[1];
+            imageSaves.push(
+                (async () => {
+                    const imageFileHandle = await opfsImagesDir.getFileHandle(imageName);
+                    const imageFile = await imageFileHandle.getFile();
+
+                    const targetImagesDirHandle = await storyDirHandle.getDirectoryHandle('images', { create: true });
+                    const newImageFileHandle = await targetImagesDirHandle.getFileHandle(imageName, { create: true });
+                    writable = await newImageFileHandle.createWritable();
+                    await writable.write(imageFile);
+                    await writable.close();
+                })()
+            );
+        }
+
+        await Promise.all(imageSaves);
+
+        alert(`Story "${title}" and its images saved successfully!`);
+
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Error saving story:', error);
+            alert('Could not save the story. This feature requires a browser like Chrome or Edge and permissions to access directories.');
+        }
+    }
 }
 
 // Initialize the application
