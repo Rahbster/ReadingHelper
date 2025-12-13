@@ -18,5 +18,10 @@
     "title": "Room on the Broom",
     "path": "stories/room_on_the_broom/",
     "level": 2
+  },
+  {
+    "title": "The Whispering Well of Willow Creek",
+    "path": "stories/the_whispering_well_of_willow_creek/",
+    "level": 3
   }
 ]
