@@ -119,6 +119,54 @@ header h1 {
     resize: vertical;
 }
 
+#phonetics-editor,
+#pronunciations-editor {
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    padding: 10px;
+    min-height: 100px;
+    max-height: 250px;
+    overflow-y: auto;
+    background-color: #fff;
+}
+
+.phonetic-pair,
+.pronunciation-pair {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.phonetic-pair input,
+.pronunciation-pair input {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-family: var(--font-main);
+}
+
+.phonetic-pair .arrow,
+.pronunciation-pair .arrow {
+    font-weight: bold;
+}
+
+.phonetic-pair .pair-controls button,
+.pronunciation-pair .pair-controls button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2em;
+    padding: 2px;
+}
+
+#add-phonetic-btn,
+#add-pronunciation-btn {
+    margin-top: 10px;
+    align-self: flex-start;
+}
+
 .story-container {
     background-color: white;
     padding: 2rem;
@@ -146,6 +194,11 @@ header h1 {
 .speakable-word:hover {
     background-color: var(--highlight-color);
     color: var(--text-color);
+}
+
+.speaking {
+    background-color: var(--primary-color) !important;
+    color: white !important;
 }
 
 /* --- Dashboard View --- */

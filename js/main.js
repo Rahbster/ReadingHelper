@@ -18,9 +18,12 @@ const dom = {
     loadFromUrlBtn: document.getElementById('load-from-url-btn'),
     loadFromComputerBtn: document.getElementById('load-from-computer-btn'),
     // Creator mode buttons
+    loadToEditBtn: document.getElementById('load-to-edit-btn'),
     addImageBtn: document.getElementById('add-image-btn'),
-    phoneticsInput: document.getElementById('phonetics-input'),
-    pronunciationsInput: document.getElementById('pronunciations-input'),
+    addPhoneticBtn: document.getElementById('add-phonetic-btn'),
+    phoneticsEditor: document.getElementById('phonetics-editor'),
+    addPronunciationBtn: document.getElementById('add-pronunciation-btn'),
+    pronunciationsEditor: document.getElementById('pronunciations-editor'),
     saveStoryBtn: document.getElementById('save-story-btn'),
 };
 
@@ -35,6 +38,8 @@ let popupWasShown = false; // Add a new flag to track if the popup was actually 
 let activeWordElement = null; // Keep track of the element being pressed
 const LONG_PRESS_DURATION = 400; // 400ms for a long press
 let isCreatorMode = false;
+let currentlySpeakingElement = null; // Tracks the element currently being spoken
+let currentStoryDirHandle = null; // Holds the directory handle for a story loaded from the computer
 
 /**
  * Unregisters service workers, clears caches, and all local storage to perform a full reset.
@@ -91,7 +96,12 @@ function setupEventListeners() {
     dom.creatorModeBtn.addEventListener('click', toggleCreatorMode);
     dom.loadFromUrlBtn.addEventListener('click', handleLoadFromUrl);
     dom.loadFromComputerBtn.addEventListener('click', handleLoadFromComputer);
+    dom.loadToEditBtn.addEventListener('click', handleLoadToEdit);
     dom.addImageBtn.addEventListener('click', addImageToStory);
+    dom.addPhoneticBtn.addEventListener('click', () => addPhoneticPair());
+    dom.phoneticsEditor.addEventListener('click', handlePhoneticsEditorClick);
+    dom.addPronunciationBtn.addEventListener('click', () => addPronunciationPair());
+    dom.pronunciationsEditor.addEventListener('click', handlePronunciationEditorClick);
     dom.storyList.addEventListener('click', handleStoryListClick);
     dom.saveStoryBtn.addEventListener('click', saveUserStory);
 
@@ -125,7 +135,7 @@ async function loadStoryLibrary() {
         const newGroupHtml = `
             <div class="story-group" data-source="${groupHostname}">
                 <div class="story-group-header">${groupHostname}</div>
-                <div class="story-group-content">${storyItemsHtml}</div>
+                <div class="story-group-content">${newStoriesHtml}</div>
             </div>
         `;
 
@@ -228,7 +238,7 @@ function getSyllables(word) {
  * Uses the Web Speech API to read a word aloud.
  * @param {string} text The text to speak.
  */
-function speakText(text) {
+function speakWordFromStory(text) {
     const lowerCaseText = text.toLowerCase();
     let textToSpeak = text;
 
@@ -236,14 +246,50 @@ function speakText(text) {
     if (currentPronunciations[lowerCaseText]) {
         textToSpeak = currentPronunciations[lowerCaseText];
     }
+    
+    // Find the element to highlight
+    const elementToHighlight = activeWordElement;
 
+    speakText(textToSpeak, elementToHighlight);
+}
+
+/**
+ * The core speech synthesis function.
+ * @param {string} textToSpeak The exact text to be spoken.
+ * @param {HTMLElement} [elementToHighlight] Optional element to highlight while speaking.
+ */
+function speakText(textToSpeak, elementToHighlight = null) {
     if (!('speechSynthesis' in window)) {
         alert('Sorry, your browser does not support text-to-speech.');
         return;
     }
-    window.speechSynthesis.cancel(); // Stop any previous speech
+    // If speech is happening, calling cancel will trigger the 'onend' of the current utterance,
+    // which will clean up the highlight. We need to ensure this happens before starting the new one.
+    window.speechSynthesis.cancel();
+
+    // Defensive cleanup for any orphaned highlights
+    if (currentlySpeakingElement) {
+        currentlySpeakingElement.classList.remove('speaking');
+    }
+    currentlySpeakingElement = elementToHighlight;
+
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
     utterance.rate = 0.8; // Speak a bit slower for clarity
+    utterance.lang = 'en-US'; // Hint to the TTS engine to use English pronunciation rules
+
+    utterance.onstart = () => {
+        if (currentlySpeakingElement) {
+            currentlySpeakingElement.classList.add('speaking');
+        }
+    };
+
+    utterance.onend = () => {
+        if (currentlySpeakingElement) {
+            currentlySpeakingElement.classList.remove('speaking');
+            currentlySpeakingElement = null;
+        }
+    };
+
     window.speechSynthesis.speak(utterance);
 }
 
@@ -317,9 +363,8 @@ function toggleCreatorMode() {
         }
         dom.storyInput.value = ''; // Clear the text area
         dom.storyInput.placeholder = 'Write your new story here...';
-        // Also clear the JSON inputs and set placeholder text
-        dom.phoneticsInput.value = '{\n  \n}';
-        dom.pronunciationsInput.value = '{\n  \n}';
+        renderPhoneticsEditor(); // Clear and render the phonetics editor
+        renderPronunciationEditor(); // Clear and render the editor
 
     } else {
         dom.creatorModeBtn.textContent = 'Enter Creator Mode';
@@ -367,6 +412,7 @@ async function handleStoryListClick(event) {
         const path = target.dataset.path;
         currentStoryPath = path; // Store the base path for the loaded story
 
+        currentStoryDirHandle = null; // Clear local directory handle when loading from web/default
         localImageUrls = {}; // Clear local images when loading a built-in story
 
         // Fetch all parts of the story module
@@ -396,6 +442,7 @@ async function handleStoryListClick(event) {
  */
 async function handleLoadFromUrl() {
     let baseUrl = prompt('Please enter the URL to the story folder:', 'https://rahbster.github.io/ReadingHelper/');
+    currentStoryDirHandle = null; // Clear local directory handle when loading from web
 
     if (!baseUrl) {
         // User cancelled the prompt
@@ -458,6 +505,7 @@ async function handleLoadFromUrl() {
  */
 async function handleLoadFromComputer() {
     try {
+        currentStoryDirHandle = null; // Reset first
         const dirHandle = await window.showDirectoryPicker();
 
         // Reset state for the new story
@@ -473,22 +521,22 @@ async function handleLoadFromComputer() {
         try {
             const phoneticsFileHandle = await dirHandle.getFileHandle('phonetics.json');
             const phoneticsFile = await phoneticsFileHandle.getFile();
-            currentPhonetics = JSON.parse(await phoneticsFile.text());
-            dom.phoneticsInput.value = JSON.stringify(currentPhonetics, null, 2);
+            const phonetics = JSON.parse(await phoneticsFile.text());
+            renderPhoneticsEditor(phonetics);
         } catch (e) {
             currentPhonetics = {};
-            dom.phoneticsInput.value = '{\n  \n}';
+            renderPhoneticsEditor();
         }
 
         // 3. Load pronunciations.json (optional)
         try {
             const pronunciationsFileHandle = await dirHandle.getFileHandle('pronunciations.json');
             const pronunciationsFile = await pronunciationsFileHandle.getFile();
-            currentPronunciations = JSON.parse(await pronunciationsFile.text());
-            dom.pronunciationsInput.value = JSON.stringify(currentPronunciations, null, 2);
+            const pronunciations = JSON.parse(await pronunciationsFile.text());
+            renderPronunciationEditor(pronunciations);
         } catch (e) {
             currentPronunciations = {};
-            dom.pronunciationsInput.value = '{\n  \n}';
+            renderPronunciationEditor();
         }
 
         // 4. Load images from the 'images' subdirectory (optional)
@@ -505,6 +553,8 @@ async function handleLoadFromComputer() {
         }
 
         closeStoryModal();
+        // Store the handle for later use (e.g., saving)
+        currentStoryDirHandle = dirHandle;
         renderStory();
     } catch (error) {
         if (error.name !== 'AbortError') {
@@ -513,6 +563,65 @@ async function handleLoadFromComputer() {
         }
     }
 }
+
+/**
+ * Handles loading a story project from the user's local computer directly into the creator mode.
+ */
+async function handleLoadToEdit() {
+    try {
+        currentStoryDirHandle = null; // Reset first
+        const dirHandle = await window.showDirectoryPicker();
+
+        // Reset state for the new story
+        currentStoryPath = '';
+        localImageUrls = {};
+
+        // 1. Load story.txt
+        const storyFileHandle = await dirHandle.getFileHandle('story.txt');
+        const storyFile = await storyFileHandle.getFile();
+        dom.storyInput.value = await storyFile.text();
+
+        // 2. Load phonetics.json (optional)
+        try {
+            const phoneticsFileHandle = await dirHandle.getFileHandle('phonetics.json');
+            const phoneticsFile = await phoneticsFileHandle.getFile();
+            const phonetics = JSON.parse(await phoneticsFile.text());
+            renderPhoneticsEditor(phonetics);
+        } catch (e) {
+            currentPhonetics = {};
+            renderPhoneticsEditor();
+        }
+
+        // 3. Load pronunciations.json (optional)
+        try {
+            const pronunciationsFileHandle = await dirHandle.getFileHandle('pronunciations.json');
+            const pronunciationsFile = await pronunciationsFileHandle.getFile();
+            const pronunciations = JSON.parse(await pronunciationsFile.text());
+            renderPronunciationEditor(pronunciations);
+        } catch (e) {
+            currentPronunciations = {};
+            renderPronunciationEditor();
+        }
+
+        // 4. Load images from the 'images' subdirectory (optional)
+        // We don't need to create ObjectURLs here as they are only used for rendering in the reader.
+        // The image paths in the text are sufficient for the creator.
+
+        // Store the handle for later use (e.g., saving)
+        currentStoryDirHandle = dirHandle;
+
+        // Use a timeout to ensure the UI has a chance to update before the alert blocks the thread.
+        setTimeout(() => alert(`Story loaded successfully into the editor.`), 0);
+
+
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Error loading story to edit:', error);
+            alert('Could not load the story. Please ensure you select a valid story folder.');
+        }
+    }
+}
+
 /**
  * Displays a pop-up with the syllabified word near the target element.
  * @param {string} word The word to display.
@@ -592,12 +701,122 @@ function handlePressEnd(event) {
     // If it was a short press AND the press started on a valid word element, process it as a tap.
     else if (wasShortPress && activeWordElement) { // This correctly identifies a tap
         const word = activeWordElement.textContent.trim().toLowerCase();
-        speakText(word);
+        speakWordFromStory(word);
         trackWord(word);
     }
 
     activeWordElement = null; // Reset the active element
     isLongPress = false;      // CRITICAL FIX: Reset the long press flag after every interaction.
+}
+
+/**
+ * Renders the interactive phonetics editor from an object.
+ * @param {object} [phonetics={}] - The phonetics object to render.
+ */
+function renderPhoneticsEditor(phonetics = {}) {
+    currentPhonetics = phonetics;
+    dom.phoneticsEditor.innerHTML = Object.entries(phonetics).map(([word, replacement]) => {
+        return `
+            <div class="phonetic-pair">
+                <input type="text" class="original-word" value="${word}" placeholder="Original word">
+                <span class="arrow">→</span>
+                <input type="text" class="replacement-word" value="${replacement}" placeholder="syl-la-bles">
+                <div class="pair-controls">
+                    <button class="remove-btn" title="Remove this pair">❌</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * Adds a new, empty row to the phonetics editor.
+ */
+function addPhoneticPair() {
+    const pairHtml = `
+        <div class="phonetic-pair">
+            <input type="text" class="original-word" placeholder="Original word">
+            <span class="arrow">→</span>
+            <input type="text" class="replacement-word" placeholder="syl-la-bles">
+            <div class="pair-controls">
+                <button class="remove-btn" title="Remove this pair">❌</button>
+            </div>
+        </div>
+    `;
+    dom.phoneticsEditor.insertAdjacentHTML('beforeend', pairHtml);
+}
+
+/**
+ * Handles clicks inside the phonetics editor to remove a pair.
+ * @param {Event} event The click event.
+ */
+function handlePhoneticsEditorClick(event) {
+    const target = event.target;
+    const pairElement = target.closest('.phonetic-pair');
+    if (!pairElement) return;
+
+    if (target.classList.contains('remove-btn')) {
+        pairElement.remove();
+    }
+}
+
+/**
+ * Renders the interactive pronunciation editor from an object.
+ * @param {object} [pronunciations={}] - The pronunciations object to render.
+ */
+function renderPronunciationEditor(pronunciations = {}) {
+    currentPronunciations = pronunciations;
+    dom.pronunciationsEditor.innerHTML = Object.entries(pronunciations).map(([word, replacement]) => {
+        return `
+            <div class="pronunciation-pair">
+                <input type="text" class="original-word" value="${word}" placeholder="Original word">
+                <span class="arrow">→</span>
+                <input type="text" class="replacement-word" value="${replacement}" placeholder="How to say it">
+                <div class="pair-controls">
+                    <button class="speak-btn" title="Speak this pronunciation">🔊</button>
+                    <button class="remove-btn" title="Remove this pair">❌</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * Adds a new, empty row to the pronunciation editor.
+ */
+function addPronunciationPair() {
+    const pairHtml = `
+        <div class="pronunciation-pair">
+            <input type="text" class="original-word" placeholder="Original word">
+            <span class="arrow">→</span>
+            <input type="text" class="replacement-word" placeholder="How to say it">
+            <div class="pair-controls">
+                <button class="speak-btn" title="Speak this pronunciation">🔊</button>
+                <button class="remove-btn" title="Remove this pair">❌</button>
+            </div>
+        </div>
+    `;
+    dom.pronunciationsEditor.insertAdjacentHTML('beforeend', pairHtml);
+}
+
+/**
+ * Handles clicks inside the pronunciation editor for speak and remove buttons.
+ * @param {Event} event The click event.
+ */
+function handlePronunciationEditorClick(event) {
+    const target = event.target;
+    const pairElement = target.closest('.pronunciation-pair');
+    if (!pairElement) return;
+
+    if (target.classList.contains('speak-btn')) {
+        const replacementInput = pairElement.querySelector('.replacement-word');
+        const textToSpeak = replacementInput.value.trim();
+        if (textToSpeak) {
+            speakText(textToSpeak);
+        }
+    } else if (target.classList.contains('remove-btn')) {
+        pairElement.remove();
+    }
 }
 
 /**
@@ -650,39 +869,42 @@ async function saveUserStory() {
         return;
     }
 
-    const title = prompt('Please enter a title for your story (this will be the folder name):');
-    if (!title) return; // User cancelled
+    const phoneticsObj = {};
+    dom.phoneticsEditor.querySelectorAll('.phonetic-pair').forEach(pair => {
+        const original = pair.querySelector('.original-word').value.trim().toLowerCase();
+        const replacement = pair.querySelector('.replacement-word').value.trim();
+        if (original && replacement) {
+            phoneticsObj[original] = replacement;
+        }
+    });
+    const phoneticsContent = JSON.stringify(phoneticsObj, null, 2);
 
-    const folderName = title.toLowerCase().replace(/\s+/g, '_').replace(/[^\w-]/g, '');
-    if (!folderName) {
-        alert('Invalid title. Please use letters and numbers.');
-        return;
-    }
-
-    // Validate and prepare JSON content
-    let phoneticsContent = dom.phoneticsInput.value.trim() || '{}';
-    let pronunciationsContent = dom.pronunciationsInput.value.trim() || '{}';
-
-    try {
-        JSON.parse(phoneticsContent);
-    } catch (e) {
-        alert(`The Phonetics Guide contains invalid JSON. Please correct it.\nError: ${e.message}`);
-        dom.phoneticsInput.focus();
-        return;
-    }
-
-    try {
-        JSON.parse(pronunciationsContent);
-    } catch (e) {
-        alert(`The Pronunciation Guide contains invalid JSON. Please correct it.\nError: ${e.message}`);
-        dom.pronunciationsInput.focus();
-        return;
-    }
-
+    // Build the pronunciations object from the interactive editor
+    const pronunciationsObj = {};
+    dom.pronunciationsEditor.querySelectorAll('.pronunciation-pair').forEach(pair => {
+        const original = pair.querySelector('.original-word').value.trim().toLowerCase();
+        const replacement = pair.querySelector('.replacement-word').value.trim();
+        if (original && replacement) {
+            pronunciationsObj[original] = replacement;
+        }
+    });
+    const pronunciationsContent = JSON.stringify(pronunciationsObj, null, 2);
 
     try {
-        // Ask the user to pick a directory to save the story project into.
+        // Ask the user to pick a directory FIRST to preserve the user gesture.
         const dirHandle = await window.showDirectoryPicker();
+
+        // Now, get the title.
+        const title = prompt('Please enter a title for your story (this will be the folder name):');
+        if (!title) return; // User cancelled
+
+        const folderName = title.toLowerCase().replace(/\s+/g, '_').replace(/[^\w-]/g, '');
+        if (!folderName) {
+            alert('Invalid title. Please use letters and numbers.');
+            return;
+        }
+
+        // Get a handle to the specific story sub-directory.
         const storyDirHandle = await dirHandle.getDirectoryHandle(folderName, { create: true });
 
         // 1. Save the story.txt file
@@ -717,14 +939,44 @@ async function saveUserStory() {
             const imageName = match[1];
             imageSaves.push(
                 (async () => {
-                    const imageFileHandle = await opfsImagesDir.getFileHandle(imageName);
-                    const imageFile = await imageFileHandle.getFile();
+                    try {
+                        // Attempt to get the image from OPFS. This will only succeed for images added in the current session.
+                        const imageFileHandle = await opfsImagesDir.getFileHandle(imageName);
+                        const imageFile = await imageFileHandle.getFile();
 
-                    const targetImagesDirHandle = await storyDirHandle.getDirectoryHandle('images', { create: true });
-                    const newImageFileHandle = await targetImagesDirHandle.getFileHandle(imageName, { create: true });
-                    writable = await newImageFileHandle.createWritable();
-                    await writable.write(imageFile);
-                    await writable.close();
+                        // If successful, copy it to the destination directory.
+                        const targetImagesDirHandle = await storyDirHandle.getDirectoryHandle('images', { create: true });
+                        const newImageFileHandle = await targetImagesDirHandle.getFileHandle(imageName, { create: true });
+                        const imageWritable = await newImageFileHandle.createWritable();
+                        await imageWritable.write(imageFile);
+                        await imageWritable.close();
+                    } catch (opfsError) {
+                        // Image not in OPFS. Try to copy it from the original source.
+                        let imageBlob = null;
+                        if (currentStoryDirHandle) {
+                            // Source is a local directory
+                            const sourceImagesDir = await currentStoryDirHandle.getDirectoryHandle('images');
+                            const sourceImageHandle = await sourceImagesDir.getFileHandle(imageName);
+                            imageBlob = await sourceImageHandle.getFile();
+                        } else if (currentStoryPath) {
+                            // Source is a web URL
+                            const imageUrl = new URL(`images/${imageName}`, currentStoryPath).href;
+                            const response = await fetch(imageUrl);
+                            if (response.ok) {
+                                imageBlob = await response.blob();
+                            }
+                        }
+
+                        if (imageBlob) {
+                            const targetImagesDirHandle = await storyDirHandle.getDirectoryHandle('images', { create: true });
+                            const newImageFileHandle = await targetImagesDirHandle.getFileHandle(imageName, { create: true });
+                            const imageWritable = await newImageFileHandle.createWritable();
+                            await imageWritable.write(imageBlob);
+                            await imageWritable.close();
+                        } else {
+                            console.log(`Could not find source for image '${imageName}', skipping copy.`);
+                        }
+                    }
                 })()
             );
         }

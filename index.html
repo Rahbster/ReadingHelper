@@ -25,15 +25,18 @@
                 <textarea id="story-input" placeholder="Paste a story here..."></textarea>
                 <div class="json-editors">
                     <div class="json-editor">
-                        <label for="phonetics-input">Phonetics Guide (JSON)</label>
-                        <textarea id="phonetics-input" placeholder='{ "example": "ex-am-ple" }'></textarea>
+                        <label>Phonetics Guide</label>
+                        <div id="phonetics-editor"></div>
+                        <button id="add-phonetic-btn" class="theme-button">Add Phonetic</button>
                     </div>
                     <div class="json-editor">
-                        <label for="pronunciations-input">Pronunciation Guide (JSON)</label>
-                        <textarea id="pronunciations-input" placeholder='{ "was": "wuz" }'></textarea>
+                        <label>Pronunciation Guide</label>
+                        <div id="pronunciations-editor"></div>
+                        <button id="add-pronunciation-btn" class="theme-button">Add Pronunciation</button>
                     </div>
                 </div>
                 <div class="input-buttons">
+                    <button id="load-to-edit-btn" class="theme-button">Load to Edit</button>
                     <button id="add-image-btn" class="theme-button">Add Image</button>
                     <button id="save-story-btn" class="theme-button">Save Story</button>
                 </div>
