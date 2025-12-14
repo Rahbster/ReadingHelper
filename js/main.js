@@ -154,7 +154,7 @@ function renderStory() {
     const text = dom.storyInput.value; // We still use storyInput as the source of truth
     // Split by spaces and punctuation, but keep them for rendering.
     // This regex splits on spaces, newlines, and common punctuation.
-    const parts = text.split(/(\[IMAGE:.*?\]|[ \n.,!?;:"'()])/);
+    const parts = text.split(/(\[IMAGE:.*?\]|[ \n.,!?;:"()])/);
 
     const html = parts.map(part => {
         if (!part) return '';
@@ -174,7 +174,7 @@ function renderStory() {
         }
 
         // Check if the part is a word (contains letters)
-        if (/[a-zA-Z]/.test(part)) {
+        if (/[a-zA-Z']/.test(part) && /[a-zA-Z]/.test(part)) { // Must contain letters, can contain apostrophes
             return `<span class="speakable-word">${part}</span>`;
         } else {
             // It's whitespace or punctuation, return as is.
