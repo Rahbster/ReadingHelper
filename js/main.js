@@ -118,28 +118,24 @@ function setupEventListeners() {
  * Fetches the story manifest and populates the story selection modal.
  */
 async function loadStoryLibrary() {
-    const defaultStoryUrl = 'https://rahbster.github.io/ReadingHelper/';
-    const libraryUrl = new URL('stories.json', defaultStoryUrl).href;
-
     try {
-        const response = await fetch(libraryUrl);
-        if (!response.ok) throw new Error(`Could not load default story library from ${libraryUrl}`);
+        // Fetch the local stories.json file
+        const response = await fetch('stories.json');
+        if (!response.ok) throw new Error('Could not load story library.');
         const stories = await response.json();
 
-        const newStoriesHtml = stories.map(story => {
-            const fullStoryPath = new URL(story.path, defaultStoryUrl).href;
-            return `<div class="story-item" data-path="${fullStoryPath}">${story.title}</div>`;
-        }).join('');
+        // Use relative paths for local stories
+        const storyItemsHtml = stories.map(story =>
+            `<div class="story-item" data-path="${story.path}">${story.title}</div>`
+        ).join('');
 
-        const groupHostname = new URL(defaultStoryUrl).hostname;
-        const newGroupHtml = `
-            <div class="story-group" data-source="${groupHostname}">
-                <div class="story-group-header">${groupHostname}</div>
-                <div class="story-group-content">${newStoriesHtml}</div>
+        // Group the local stories under a "Default Stories" header
+        dom.storyList.innerHTML = `
+            <div class="story-group">
+                <div class="story-group-header">Default Stories</div>
+                <div class="story-group-content">${storyItemsHtml}</div>
             </div>
         `;
-
-        dom.storyList.innerHTML = newGroupHtml;
     } catch (error) {
         console.error(error);
         dom.storyList.innerHTML = `<p>Could not load default stories. You can still load stories from your computer or another URL.</p>`;
@@ -272,6 +268,8 @@ function speakText(textToSpeak, elementToHighlight = null) {
         currentlySpeakingElement.classList.remove('speaking');
     }
     currentlySpeakingElement = elementToHighlight;
+
+    console.log(`Speech Synthesis pronouncing: "${textToSpeak}"`);
 
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
     utterance.rate = 0.8; // Speak a bit slower for clarity
@@ -414,6 +412,9 @@ async function handleStoryListClick(event) {
 
         currentStoryDirHandle = null; // Clear local directory handle when loading from web/default
         localImageUrls = {}; // Clear local images when loading a built-in story
+        // CRITICAL: Clear previous guides from memory before fetching new ones.
+        currentPhonetics = {};
+        currentPronunciations = {};
 
         // Fetch all parts of the story module
         try {
@@ -428,6 +429,10 @@ async function handleStoryListClick(event) {
             currentPronunciations = await pronunciationsResponse.json();
 
             dom.storyInput.value = storyText;
+            // Also populate the creator editors so the user can see the loaded guides.
+            renderPhoneticsEditor(currentPhonetics);
+            renderPronunciationEditor(currentPronunciations);
+
             closeStoryModal();
             renderStory(); // Automatically load the story
         } catch (error) {
@@ -511,6 +516,9 @@ async function handleLoadFromComputer() {
         // Reset state for the new story
         currentStoryPath = '';
         localImageUrls = {};
+        // CRITICAL: Clear previous guides from memory before loading new ones.
+        currentPhonetics = {};
+        currentPronunciations = {};
 
         // 1. Load story.txt
         const storyFileHandle = await dirHandle.getFileHandle('story.txt');
@@ -575,6 +583,9 @@ async function handleLoadToEdit() {
         // Reset state for the new story
         currentStoryPath = '';
         localImageUrls = {};
+        // CRITICAL: Clear previous guides from memory before loading new ones.
+        currentPhonetics = {};
+        currentPronunciations = {};
 
         // 1. Load story.txt
         const storyFileHandle = await dirHandle.getFileHandle('story.txt');
