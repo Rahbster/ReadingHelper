@@ -7,6 +7,20 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    <link rel="icon" href="icons/icon-tab.png" type="image/png">
+    <script src="js/main.js" type="module" defer></script>
+    <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').then(registration => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                }, err => {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+    </script>
     <meta name="theme-color" content="#A9C9FF"/>
 </head>
 <body>
@@ -14,8 +28,17 @@
     <header>
         <h1>Reading Helper</h1>
         <div class="header-buttons">
-            <button id="choose-story-btn" class="theme-button">Choose a Story</button>
-            <button id="toggle-dashboard-btn" class="theme-button">Dashboard</button>
+            <button id="choose-story-btn" class="theme-button">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="Select from collection">
+                    <rect x="4" y="6" width="4" height="14" rx="1" opacity="0.6"/>
+                    <rect x="16" y="6" width="4" height="14" rx="1" opacity="0.6"/>
+                    <path d="M10 3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v17a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V3z"/>
+                    <path d="M11 5h2v2h-2V5z" fill="white" opacity="0.5"/>
+                </svg>
+                <span>Choose a Story</span></button>
+            <button id="toggle-dashboard-btn" class="theme-button">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4 4h-2v6h2V7zm-8 3H7v3h2v-3zM3 21h18v-2H3v2zM3 3v2h18V3H3z"/></svg>
+                <span>Dashboard</span></button>
         </div>
     </header>
 
@@ -36,9 +59,12 @@
                     </div>
                 </div>
                 <div class="input-buttons">
-                    <button id="load-to-edit-btn" class="theme-button">Load to Edit</button>
-                    <button id="add-image-btn" class="theme-button">Add Image</button>
-                    <button id="save-story-btn" class="theme-button">Save Story</button>
+                    <button id="add-image-btn" class="theme-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                        <span>Add Image</span></button>
+                    <button id="save-story-btn" class="theme-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
+                        <span>Save Story</span></button>
                 </div>
             </div>
             <div id="story-display" class="story-container">
@@ -50,9 +76,18 @@
             <h2>Tricky Words</h2>
             <p>This list shows the words that have been tapped the most, helping you see where to focus.</p>
             <div class="dashboard-controls">
-                <button id="creator-mode-btn" class="theme-button">Enter Creator Mode</button>
-                <button id="clear-stats-btn" class="theme-button">Clear Word Stats</button>
-                <button id="reset-app-btn" class="theme-button destructive">Reset App</button>
+                <button id="settings-btn" class="theme-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg>
+                    <span>Settings</span></button>
+                <button id="creator-mode-btn" class="theme-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+                    <span>Enter Creator Mode</span></button>
+                <button id="clear-stats-btn" class="theme-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M16 9h-4v4H9l3 3 3-3h-3V9z"/><path d="M19.78 2.22a.9959.9959 0 0 0-1.41 0L3 17.59V21h3.41l15.37-15.37a.9959.9959 0 0 0 0-1.41L19.78 2.22zM6.92 19H5v-1.92l11.08-11.08 1.92 1.92L6.92 19z"/></svg>
+                    <span>Clear Word Stats</span></button>
+                <button id="reset-app-btn" class="theme-button destructive">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6zm-1-8h2v4h-2zm0-4h2v2h-2z"/></svg>
+                    <span>Reset App</span></button>
             </div>
             <div id="tricky-words-list">
                 <!-- Word stats will be populated here by JavaScript -->
@@ -64,35 +99,80 @@
     <div id="story-modal" class="modal hidden">
         <div class="modal-content">
             <h2>Choose a Story</h2>
+            <button id="story-modal-x-btn" class="modal-close-btn" aria-label="Close">&times;</button>
+            <button id="refresh-story-list-btn" class="theme-button" title="Refresh story list">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                <span>Refresh</span>
+            </button>
             <div id="story-list">
                 <!-- Story links will be populated here -->
             </div>
-            <hr>
-            <h4>Or Load from...</h4>
             <div class="load-options">
-                <button id="load-from-computer-btn" class="theme-button">Load from Computer</button>
-                <button id="load-from-url-btn" class="theme-button">Load from Web...</button>
+                <button id="share-stories-btn" class="theme-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3s3-1.34 3-3-1.34-3-3-3z"/></svg>
+                    <span>Share Stories</span> <span id="peer-count-badge" class="peer-badge hidden">0</span>
+                </button>
+                <button id="load-from-url-btn" class="theme-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                    <span>Load from Web...</span></button>
             </div>
-            <br>
-            <button id="close-story-modal-btn" class="theme-button">Close</button>
+        </div>
+    </div>
+
+    <!-- PeerJS Connection Modal -->
+    <div id="peer-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Share Stories</h2>
+            <button id="peer-modal-x-btn" class="modal-close-btn" aria-label="Close">&times;</button>
+            <div id="peer-role-selection">
+                <p>Choose your role to connect with another device.</p>
+                <button id="host-btn" class="theme-button">Host Session</button>
+                <button id="join-btn" class="theme-button">Join Session</button>
+            </div>
+            <div id="host-view" class="hidden">
+                <h3>Your Host ID</h3>
+                <p>Ask the other person to enter this ID on their device.</p>
+                <div id="host-id-display">...</div>
+            </div>
+            <div id="join-view" class="hidden">
+                <h3>Join a Session</h3>
+                <input type="text" id="join-id-input" placeholder="Enter Host ID">
+                <button id="connect-peer-btn" class="theme-button">Connect</button>
+            </div>
+            <div id="connected-view" class="hidden">
+                <p id="peer-status"></p>
+                <button id="choose-story-to-share-btn" class="theme-button">Choose a Story to Share</button>
+            </div>
+            <div id="share-selection-view" class="hidden">
+                <h3>Choose a story to send</h3>
+                <div id="shareable-story-list"></div>
+            </div>
+            <p id="peer-status"></p>
+            <div class="modal-footer-buttons">
+                <button id="disconnect-peer-btn" class="theme-button destructive hidden">Disconnect</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Settings</h2>
+            <button id="settings-modal-x-btn" class="modal-close-btn" aria-label="Close">&times;</button>
+            <h4>Local Stories Folder</h4>
+            <p class="settings-description">Set a primary folder on your computer to save and load stories from. This avoids having to pick a folder every time.</p>
+            <div id="stories-folder-status">
+                <p><strong>Status:</strong> <span id="folder-status-text">Not set.</span></p>
+            </div>
+            <div class="modal-footer-buttons">
+                <button id="set-stories-folder-btn" class="theme-button">Set Folder</button>
+                <button id="clear-stories-folder-btn" class="theme-button destructive">Clear Setting</button>
+            </div>
         </div>
     </div>
 
     <!-- Syllable breakdown pop-up -->
     <div id="syllable-popup" class="syllable-popup hidden"></div>
-
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').then(registration => {
-                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                }, err => {
-                    console.log('ServiceWorker registration failed: ', err);
-                });
-            });
-        }
-    </script>
-    <script src="js/main.js" type="module"></script>
 
 </body>
 </html>

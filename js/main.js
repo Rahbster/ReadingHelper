@@ -1,3 +1,5 @@
+import * as peerService from './peer-service.js';
+
 const dom = {
     storyInput: document.getElementById('story-input'),
     storyDisplay: document.getElementById('story-display'),
@@ -13,18 +15,43 @@ const dom = {
     // Modal elements
     syllablePopup: document.getElementById('syllable-popup'),
     storyModal: document.getElementById('story-modal'),
-    storyList: document.getElementById('story-list'),
-    closeStoryModalBtn: document.getElementById('close-story-modal-btn'),
+    storyList: document.getElementById('story-list'),    
+    storyModalXBtn: document.getElementById('story-modal-x-btn'),
+    refreshStoryListBtn: document.getElementById('refresh-story-list-btn'),
     loadFromUrlBtn: document.getElementById('load-from-url-btn'),
-    loadFromComputerBtn: document.getElementById('load-from-computer-btn'),
+    shareStoriesBtn: document.getElementById('share-stories-btn'),
+    // PeerJS Modal elements
+    peerModal: document.getElementById('peer-modal'),
+    peerRoleSelection: document.getElementById('peer-role-selection'),
+    peerModalXBtn: document.getElementById('peer-modal-x-btn'),
+    hostBtn: document.getElementById('host-btn'),
+    joinBtn: document.getElementById('join-btn'),
+    hostView: document.getElementById('host-view'),
+    joinView: document.getElementById('join-view'),
+    hostIdDisplay: document.getElementById('host-id-display'),
+    joinIdInput: document.getElementById('join-id-input'),
+    connectPeerBtn: document.getElementById('connect-peer-btn'),
+    peerStatus: document.getElementById('peer-status'),
+    connectedView: document.getElementById('connected-view'),
+    chooseStoryToShareBtn: document.getElementById('choose-story-to-share-btn'),
+    shareSelectionView: document.getElementById('share-selection-view'),
+    shareableStoryList: document.getElementById('shareable-story-list'),
+    peerCountBadge: document.getElementById('peer-count-badge'),
+    disconnectPeerBtn: document.getElementById('disconnect-peer-btn'),
     // Creator mode buttons
-    loadToEditBtn: document.getElementById('load-to-edit-btn'),
     addImageBtn: document.getElementById('add-image-btn'),
     addPhoneticBtn: document.getElementById('add-phonetic-btn'),
     phoneticsEditor: document.getElementById('phonetics-editor'),
     addPronunciationBtn: document.getElementById('add-pronunciation-btn'),
     pronunciationsEditor: document.getElementById('pronunciations-editor'),
     saveStoryBtn: document.getElementById('save-story-btn'),
+    // Settings Modal
+    settingsModal: document.getElementById('settings-modal'),    
+    settingsModalXBtn: document.getElementById('settings-modal-x-btn'),
+    settingsBtn: document.getElementById('settings-btn'),
+    setStoriesFolderBtn: document.getElementById('set-stories-folder-btn'),
+    clearStoriesFolderBtn: document.getElementById('clear-stories-folder-btn'),
+    folderStatusText: document.getElementById('folder-status-text'),
 };
 
 const WORD_STATS_KEY = 'readingHelperWordStats';
@@ -40,6 +67,10 @@ const LONG_PRESS_DURATION = 400; // 400ms for a long press
 let isCreatorMode = false;
 let currentlySpeakingElement = null; // Tracks the element currently being spoken
 let currentStoryDirHandle = null; // Holds the directory handle for a story loaded from the computer
+let storiesDirHandle = null; // Holds the handle for the user's main stories directory
+let sharedStoryHandles = {}; // Holds directory handles for shared stories, keyed by folder name
+let localStoryHandles = {}; // Holds directory handles for local stories, keyed by folder name
+let isPeerConnected = false; // Tracks if a peer connection is active
 
 /**
  * Unregisters service workers, clears caches, and all local storage to perform a full reset.
@@ -78,6 +109,7 @@ async function resetApplication() {
  * Main initialization function.
  */
 async function init() {
+    await loadHandleFromDB();
     loadWordStats();
     await loadStoryLibrary();
     setupEventListeners();
@@ -88,22 +120,54 @@ async function init() {
  * Sets up all the event listeners for the application.
  */
 function setupEventListeners() {
-    dom.chooseStoryBtn.addEventListener('click', openStoryModal);
-    dom.toggleDashboardBtn.addEventListener('click', toggleDashboard);
-    dom.clearStatsBtn.addEventListener('click', clearAllStats);
-    dom.resetAppBtn.addEventListener('click', resetApplication);
-    dom.closeStoryModalBtn.addEventListener('click', closeStoryModal);
-    dom.creatorModeBtn.addEventListener('click', toggleCreatorMode);
-    dom.loadFromUrlBtn.addEventListener('click', handleLoadFromUrl);
-    dom.loadFromComputerBtn.addEventListener('click', handleLoadFromComputer);
-    dom.loadToEditBtn.addEventListener('click', handleLoadToEdit);
-    dom.addImageBtn.addEventListener('click', addImageToStory);
-    dom.addPhoneticBtn.addEventListener('click', () => addPhoneticPair());
-    dom.phoneticsEditor.addEventListener('click', handlePhoneticsEditorClick);
-    dom.addPronunciationBtn.addEventListener('click', () => addPronunciationPair());
-    dom.pronunciationsEditor.addEventListener('click', handlePronunciationEditorClick);
-    dom.storyList.addEventListener('click', handleStoryListClick);
-    dom.saveStoryBtn.addEventListener('click', saveUserStory);
+    const listeners = [
+        // Main Controls
+        { element: dom.chooseStoryBtn, event: 'click', handler: openStoryModal },
+        { element: dom.toggleDashboardBtn, event: 'click', handler: toggleDashboard },
+        { element: dom.creatorModeBtn, event: 'click', handler: toggleCreatorMode },
+
+        // Dashboard
+        { element: dom.clearStatsBtn, event: 'click', handler: clearAllStats },
+        { element: dom.resetAppBtn, event: 'click', handler: resetApplication },
+
+        // Story Modal
+        { element: dom.storyModalXBtn, event: 'click', handler: closeStoryModal },
+        { element: dom.storyModal, event: 'click', handler: (e) => { if (e.target === dom.storyModal) closeStoryModal(); } },
+        { element: dom.loadFromUrlBtn, event: 'click', handler: handleLoadFromUrl },
+        { element: dom.refreshStoryListBtn, event: 'click', handler: loadStoryLibrary },
+        { element: dom.storyList, event: 'click', handler: handleStoryListClick },
+
+        // Creator Mode
+        { element: dom.addImageBtn, event: 'click', handler: addImageToStory },
+        { element: dom.addPhoneticBtn, event: 'click', handler: () => addPhoneticPair() },
+        { element: dom.phoneticsEditor, event: 'click', handler: handlePhoneticsEditorClick },
+        { element: dom.addPronunciationBtn, event: 'click', handler: () => addPronunciationPair() },
+        { element: dom.pronunciationsEditor, event: 'click', handler: handlePronunciationEditorClick },
+        { element: dom.saveStoryBtn, event: 'click', handler: saveUserStory },
+
+        // PeerJS Sharing
+        { element: dom.shareStoriesBtn, event: 'click', handler: openPeerModal }, // Button is in story modal now
+        { element: dom.peerModalXBtn, event: 'click', handler: closePeerModal },
+        { element: dom.peerModal, event: 'click', handler: (e) => { if (e.target === dom.peerModal) closePeerModal(); } },
+        { element: dom.hostBtn, event: 'click', handler: setupHost },
+        { element: dom.joinBtn, event: 'click', handler: setupJoiner },
+        { element: dom.connectPeerBtn, event: 'click', handler: connectToHost },
+        { element: dom.chooseStoryToShareBtn, event: 'click', handler: showShareableStories },
+        { element: dom.disconnectPeerBtn, event: 'click', handler: disconnectSession },
+
+        // Settings Modal
+        { element: dom.settingsBtn, event: 'click', handler: openSettingsModal },
+        { element: dom.settingsModal, event: 'click', handler: (e) => { if (e.target === dom.settingsModal) closeSettingsModal(); } },
+        { element: dom.settingsModalXBtn, event: 'click', handler: closeSettingsModal },
+        { element: dom.setStoriesFolderBtn, event: 'click', handler: setStoriesFolder },
+        { element: dom.clearStoriesFolderBtn, event: 'click', handler: clearStoriesFolder },
+    ];
+
+    listeners.forEach(({ element, event, handler }) => {
+        if (element) {
+            element.addEventListener(event, handler);
+        }
+    });
 
     // Press and hold logic for syllable pop-up
     dom.storyDisplay.addEventListener('mousedown', handlePressStart);
@@ -114,10 +178,106 @@ function setupEventListeners() {
     window.addEventListener('touchend', handlePressEnd);
 }
 
+//#region IndexedDB Handle Storage
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open('ReadingHelperDB', 1);
+        request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains('handles')) {
+                db.createObjectStore('handles');
+            }
+        };
+        request.onsuccess = (event) => resolve(event.target.result);
+        request.onerror = (event) => reject(event.target.error);
+    });
+}
+
+async function saveHandleToDB(key, handle) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['handles'], 'readwrite');
+        const store = transaction.objectStore('handles');
+        const request = store.put(handle, key);
+        request.onsuccess = () => resolve();
+        request.onerror = (event) => reject(event.target.error);
+    });
+}
+
+async function loadHandleFromDB(key = 'storiesDirHandle') {
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(['handles'], 'readonly');
+            const store = transaction.objectStore('handles');
+            const request = store.get(key);
+            request.onsuccess = async (event) => {
+                const handle = event.target.result;
+                if (handle) {
+                    // Verify we still have permission. If not, the user will be re-prompted on next use.
+                    if (await verifyHandlePermission(handle)) {
+                        storiesDirHandle = handle;
+                        updateFolderStatus();
+                    } else {
+                        // Permission was revoked or expired. Clear the handle.
+                        storiesDirHandle = null;
+                        await clearHandleFromDB(key);
+                    }
+                }
+                resolve(handle);
+            };
+            request.onerror = (event) => reject(event.target.error);
+        });
+    } catch (error) {
+        console.error("IndexedDB not available or failed to load handle:", error);
+    }
+}
+
+async function clearHandleFromDB(key) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['handles'], 'readwrite');
+        const store = transaction.objectStore('handles');
+        const request = store.delete(key);
+        request.onsuccess = () => resolve();
+        request.onerror = (event) => reject(event.target.error);
+    });
+}
+
+/**
+ * Verifies (and requests if necessary) permission for a stored directory handle.
+ * @param {FileSystemDirectoryHandle} handle The directory handle.
+ * @returns {Promise<boolean>} True if permission is granted.
+ */
+async function verifyHandlePermission(handle) {
+    const options = { mode: 'readwrite' };
+    // Check if permission was already granted.
+    if ((await handle.queryPermission(options)) === 'granted') {
+        return true;
+    }
+    // Request permission. This must be called in response to a user gesture.
+    if ((await handle.requestPermission(options)) === 'granted') {
+        return true;
+    }
+    // The user didn't grant permission.
+    return false;
+}
+
+/**
+ * Checks if the stories directory handle is available and has permission.
+ * @returns {Promise<boolean>}
+ */
+async function checkStoriesDirHandle() {
+    if (!storiesDirHandle) return false;
+    return await verifyHandlePermission(storiesDirHandle);
+}
+//#endregion
+
 /**
  * Fetches the story manifest and populates the story selection modal.
  */
 async function loadStoryLibrary() {
+    dom.storyList.innerHTML = ''; // Clear the list first
     try {
         // Fetch the local stories.json file
         const response = await fetch('stories.json');
@@ -126,7 +286,7 @@ async function loadStoryLibrary() {
 
         // Use relative paths for local stories
         const storyItemsHtml = stories.map(story =>
-            `<div class="story-item" data-path="${story.path}">${story.title}</div>`
+            `<div class="story-item" data-path="${story.path}"><span class="story-item-title">${story.title}</span></div>`
         ).join('');
 
         // Group the local stories under a "Default Stories" header
@@ -136,12 +296,129 @@ async function loadStoryLibrary() {
                 <div class="story-group-content">${storyItemsHtml}</div>
             </div>
         `;
+
+        // Load stories from other sources
+        await loadSharedStories();
+        await loadLocalStories();
+
     } catch (error) {
         console.error(error);
         dom.storyList.innerHTML = `<p>Could not load default stories. You can still load stories from your computer or another URL.</p>`;
     }
 }
 
+/**
+ * Finds stories in the user's designated local stories folder and adds them to the modal.
+ */
+async function loadLocalStories() {
+    if (!storiesDirHandle) {
+        console.log('Local stories folder not set, skipping.');
+        return;
+    }
+
+    try {
+        const localStories = [];
+        localStoryHandles = {}; // Reset the cache
+
+        for await (const entry of storiesDirHandle.values()) {
+            if (entry.kind === 'directory') {
+                // To be considered a story, a directory must contain 'story.txt'
+                try {
+                    await entry.getFileHandle('story.txt');
+                    const title = entry.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    localStoryHandles[entry.name] = entry; // Cache the handle
+                    localStories.push({ title, name: entry.name });
+                } catch (e) {
+                    // This directory is not a story folder, ignore it.
+                }
+            }
+        }
+
+        if (localStories.length > 0) {
+            addLocalStoriesToModal(localStories);
+        }
+    } catch (error) {
+        console.error('Error loading stories from local folder:', error);
+    }
+}
+
+/**
+ * Adds a list of local stories to the UI.
+ * @param {Array<object>} stories - An array of story objects with title and name properties.
+ */
+function addLocalStoriesToModal(stories) {
+    let group = dom.storyList.querySelector('#local-stories-group');
+    if (!group) {
+        dom.storyList.insertAdjacentHTML('afterbegin', `
+            <div id="local-stories-group" class="story-group">
+                <div class="story-group-header">My Stories</div>
+                <div class="story-group-content"></div>
+            </div>
+        `);
+        group = dom.storyList.querySelector('#local-stories-group');
+    }
+
+    const contentArea = group.querySelector('.story-group-content');
+    const newStoriesHtml = stories.map(story =>
+        `<div class="story-item" data-local-story-name="${story.name}" data-title="${story.title}"><span class="story-item-title">${story.title}</span></div>`
+    ).join('');
+    contentArea.innerHTML = newStoriesHtml; // Use innerHTML to replace content on refresh
+}
+
+/**
+ * Finds stories in the Origin Private File System and adds them to the story modal.
+ */
+async function loadSharedStories() {
+    try {
+        const root = await navigator.storage.getDirectory();
+        const sharedDir = await root.getDirectoryHandle('shared_stories');
+        
+        const sharedStories = [];
+        for await (const entry of sharedDir.values()) {
+            if (entry.kind === 'directory') {
+                const title = entry.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                sharedStoryHandles[entry.name] = entry; // Cache the handle
+                sharedStories.push({ title, name: entry.name });
+            }
+        }
+
+        if (sharedStories.length > 0) {
+            addSharedStoriesToModal(sharedStories);
+        }
+    } catch (e) {
+        // This is not an error, it just means no stories have been shared yet.
+        console.log('No shared stories directory found.');
+    }
+}
+
+/**
+ * Adds a list of shared stories to the UI.
+ * @param {Array<object>} stories - An array of story objects with title and name properties.
+ */
+function addSharedStoriesToModal(stories) {
+    let group = dom.storyList.querySelector('#shared-stories-group');
+    if (!group) {
+        dom.storyList.insertAdjacentHTML('beforeend', `
+            <div id="shared-stories-group" class="story-group">
+                <div class="story-group-header">Shared Stories</div>
+                <div class="story-group-content"></div>
+            </div>
+        `);
+        group = dom.storyList.querySelector('#shared-stories-group');
+    }
+
+    const contentArea = group.querySelector('.story-group-content');
+    const newStoriesHtml = stories.map(story => 
+        `<div class="story-item" data-shared-story-name="${story.name}">
+            <span class="story-item-title">${story.title}</span>
+            <button class="theme-button story-delete-btn destructive" data-shared-story-name="${story.name}" title="Delete story">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                <span>Delete</span>
+            </button>
+        </div>`
+    ).join('');
+    contentArea.insertAdjacentHTML('beforeend', newStoriesHtml);
+}
 /**
  * Renders the text from the input area into the story display area,
  * making each word interactive.
@@ -330,9 +607,12 @@ function renderDashboard() {
  * Toggles the visibility of the reader and dashboard views.
  */
 function toggleDashboard() {
-    dom.readerView.classList.toggle('hidden');
-    dom.dashboardView.classList.toggle('hidden');
-    dom.toggleDashboardBtn.textContent = dom.readerView.classList.contains('hidden') ? 'Back to Reader' : 'Dashboard';
+    const isDashboardVisible = dom.dashboardView.classList.toggle('hidden');
+    dom.readerView.classList.toggle('hidden', !isDashboardVisible);
+    
+    // Update button text and visibility based on view
+    dom.toggleDashboardBtn.querySelector('span').textContent = isDashboardVisible ? 'Dashboard' : 'Back to Reader';
+    dom.chooseStoryBtn.classList.toggle('hidden', !isDashboardVisible);
 }
 
 /**
@@ -354,7 +634,7 @@ function toggleCreatorMode() {
     dom.storyDisplay.classList.toggle('hidden', isCreatorMode);
 
     if (isCreatorMode) {
-        dom.creatorModeBtn.textContent = 'Exit Creator Mode';
+        dom.creatorModeBtn.querySelector('span').textContent = 'Exit Creator Mode';
         // If dashboard is not hidden, switch back to reader view to show the creator
         if (!dom.dashboardView.classList.contains('hidden')) {
             toggleDashboard();
@@ -365,7 +645,7 @@ function toggleCreatorMode() {
         renderPronunciationEditor(); // Clear and render the editor
 
     } else {
-        dom.creatorModeBtn.textContent = 'Enter Creator Mode';
+        dom.creatorModeBtn.querySelector('span').textContent = 'Enter Creator Mode';
         renderStory(); // Render whatever is in the text area when exiting
     }
 }
@@ -383,6 +663,210 @@ function openStoryModal() {
 function closeStoryModal() {
     dom.storyModal.classList.add('hidden');
 }
+
+/**
+ * Opens the PeerJS connection modal and resets its state.
+ */
+function openPeerModal() {
+    dom.peerModal.classList.remove('hidden');
+    dom.shareSelectionView.classList.add('hidden'); // Always hide the story list initially
+
+    if (isPeerConnected) {
+        // If already connected, show the connected view directly
+        dom.peerRoleSelection.classList.add('hidden');
+        dom.hostView.classList.add('hidden');
+        dom.joinView.classList.add('hidden');
+        dom.connectedView.classList.remove('hidden');
+        // The peer status message is set when the connection is made, so we don't need to reset it here.
+    } else {
+        // Otherwise, show the initial role selection view
+        dom.peerRoleSelection.classList.remove('hidden');
+        dom.hostView.classList.add('hidden');
+        dom.joinView.classList.add('hidden');
+        dom.connectedView.classList.add('hidden');
+        dom.peerStatus.textContent = '';
+    }
+}
+
+/**
+ * Closes the PeerJS connection modal.
+ */
+function closePeerModal() {
+    dom.peerModal.classList.add('hidden');
+    // We no longer destroy the peer here to allow the connection to persist.
+}
+
+/**
+ * Explicitly disconnects the peer session and resets the UI.
+ */
+function disconnectSession() {
+    peerService.destroyPeer();
+    dom.peerStatus.textContent = 'Disconnected.';
+    dom.peerCountBadge.classList.add('hidden');
+    dom.connectedView.classList.add('hidden');
+    dom.disconnectPeerBtn.classList.add('hidden');
+    dom.shareSelectionView.classList.add('hidden');
+    isPeerConnected = false;
+}
+
+/**
+ * Sets up the client as a PeerJS host.
+ */
+function setupHost() {
+    dom.peerRoleSelection.classList.add('hidden');
+    dom.hostView.classList.remove('hidden');
+    dom.peerStatus.textContent = 'Generating Host ID...';
+    peerService.destroyPeer(); // Start fresh
+    peerService.createHost(
+        (id) => { // onOpen
+            dom.hostIdDisplay.textContent = id;
+            dom.peerStatus.textContent = 'Waiting for another device to connect...';
+        },
+        () => { // onConnect
+            dom.hostView.classList.add('hidden');
+            dom.connectedView.classList.remove('hidden');
+            dom.peerStatus.textContent = '✅ Connection established! You can now share stories.';
+            dom.disconnectPeerBtn.classList.remove('hidden');
+            // Show all share buttons now that a connection is active
+            document.querySelectorAll('.story-share-btn').forEach(btn => {
+                btn.style.display = 'inline-block';
+            });
+        },
+        (data) => { // onData
+            handleStoryTransfer(data);
+        },
+        (errorType) => { // onError
+            dom.peerStatus.textContent = `❌ Error: ${errorType}. Please try again.`;
+        },
+        (count) => { // onConnectionChange
+            dom.peerCountBadge.textContent = count;
+            dom.peerCountBadge.classList.toggle('hidden', count === 0);
+            isPeerConnected = count > 0;
+        }
+    );
+}
+
+/**
+ * Sets up the client as a PeerJS joiner.
+ */
+function setupJoiner() {
+    dom.peerRoleSelection.classList.add('hidden');
+    dom.joinView.classList.remove('hidden');
+    dom.peerStatus.textContent = 'Ready to join a session.';
+}
+
+/**
+ * Connects a joiner to a host using the entered ID.
+ */
+function connectToHost() {
+    const hostId = dom.joinIdInput.value.trim();
+    if (!hostId) {
+        alert('Please enter a Host ID.');
+        return;
+    }
+    dom.peerStatus.textContent = `Connecting to ${hostId}...`;
+    peerService.destroyPeer(); // Start fresh
+    peerService.joinHost(hostId,
+        () => { // onConnect
+            dom.joinView.classList.add('hidden');
+            dom.connectedView.classList.remove('hidden');
+            dom.peerStatus.textContent = '✅ Connection established! Ready to receive stories.';
+            dom.disconnectPeerBtn.classList.remove('hidden');
+            document.querySelectorAll('.story-share-btn').forEach(btn => {
+                btn.style.display = 'inline-block';
+            });
+        },
+        (data) => { handleStoryTransfer(data); },
+        (errorType) => dom.peerStatus.textContent = `❌ Connection failed: ${errorType}. Please check the ID and try again.`,
+        (count) => { // onConnectionChange
+            dom.peerCountBadge.textContent = count;
+            dom.peerCountBadge.classList.toggle('hidden', count === 0);
+            isPeerConnected = count > 0;
+        }
+    );
+}
+
+/**
+ * Displays a list of the user's local stories inside the peer modal for sharing.
+ */
+function showShareableStories() {
+    dom.connectedView.classList.add('hidden');
+    dom.shareSelectionView.classList.remove('hidden');
+
+    const stories = Object.keys(localStoryHandles).map(name => {
+        const title = name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        return { name, title };
+    });
+
+    if (stories.length === 0) {
+        dom.shareableStoryList.innerHTML = '<p>You have no local stories to share. You can create one in Creator Mode or set your Stories Folder in Settings.</p>';
+        return;
+    }
+
+    dom.shareableStoryList.innerHTML = stories.map(story => 
+        `<div class="story-item" data-local-story-name="${story.name}" data-title="${story.title}">
+            <span class="story-item-title">${story.title}</span>
+        </div>`
+    ).join('');
+
+    // Add a one-time event listener for this view
+    dom.shareableStoryList.onclick = (event) => {
+        const storyItem = event.target.closest('.story-item');
+        if (storyItem) {
+            const storyName = storyItem.dataset.localStoryName;
+            const storyTitle = storyItem.dataset.title;
+            shareStory(storyName, storyTitle);
+            closePeerModal(); // Close the modal after sharing
+        }
+    };
+}
+/**
+ * Opens the settings modal and updates the status.
+ */
+function openSettingsModal() {
+    updateFolderStatus();
+    dom.settingsModal.classList.remove('hidden');
+}
+
+/**
+ * Closes the settings modal.
+ */
+function closeSettingsModal() {
+    dom.settingsModal.classList.add('hidden');
+}
+
+/**
+ * Prompts the user to select a directory and saves the handle.
+ */
+async function setStoriesFolder() {
+    try {
+        const handle = await window.showDirectoryPicker();
+        await saveHandleToDB('storiesDirHandle', handle);
+        storiesDirHandle = handle;
+        updateFolderStatus();
+        await loadStoryLibrary(); // Refresh the story list
+        alert(`Stories folder set to "${handle.name}".`);
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Error setting stories folder:', error);
+            alert('Could not set the stories folder.');
+        }
+    }
+}
+
+/**
+ * Clears the saved stories folder handle from state and DB.
+ */
+async function clearStoriesFolder() {
+    if (confirm('Are you sure you want to clear the saved stories folder setting?')) {
+        storiesDirHandle = null;
+        await clearHandleFromDB('storiesDirHandle');
+        updateFolderStatus();
+        await loadStoryLibrary(); // Refresh the story list
+        alert('Stories folder setting has been cleared.');
+    }
+}
+
 
 /**
  * Handles clicks within the story list, delegating to either expand/collapse
@@ -406,8 +890,21 @@ async function handleStoryListClick(event) {
         target.classList.toggle('collapsed', !isCollapsed);
         const content = target.nextElementSibling;
         content.classList.toggle('hidden', !isCollapsed);
-    } else if (target.classList.contains('story-item')) {
-        const path = target.dataset.path;
+    } else if (target.classList.contains('story-delete-btn')) {
+        const storyName = target.dataset.sharedStoryName;
+        const storyTitle = target.closest('.story-item').querySelector('.story-item-title').textContent;
+        deleteSharedStory(storyName, storyTitle);
+    } else if (target.dataset.sharedStoryName) {
+        const storyName = target.dataset.sharedStoryName;
+        const dirHandle = sharedStoryHandles[storyName];
+        if (dirHandle) await loadStoryFromDirectory(dirHandle);
+    } else if (target.closest('[data-local-story-name]')) {
+        const storyName = target.closest('[data-local-story-name]').dataset.localStoryName;
+        const dirHandle = localStoryHandles[storyName];
+        if (dirHandle) await loadStoryFromDirectory(dirHandle);
+    } else if (target.closest('.story-item')) {
+        const storyItem = target.closest('.story-item');
+        const path = storyItem.dataset.path;
         currentStoryPath = path; // Store the base path for the loaded story
 
         currentStoryDirHandle = null; // Clear local directory handle when loading from web/default
@@ -478,7 +975,7 @@ async function handleLoadFromUrl() {
         const newStoriesHtml = stories.map(story => {
             // The full path to the story's folder is the base URL of the library + the story's relative path.
             const fullStoryPath = new URL(story.path, baseUrl).href;
-            return `<div class="story-item" data-path="${fullStoryPath}">${story.title}</div>`;
+            return `<div class="story-item" data-path="${fullStoryPath}"><span class="story-item-title">${story.title}</span></div>`;
         }).join('');
 
         const groupHostname = new URL(baseUrl).hostname;
@@ -506,17 +1003,235 @@ async function handleLoadFromUrl() {
 }
 
 /**
- * Handles loading a story project from the user's local computer.
+ * Handles an incoming story package from a peer.
+ * @param {object} storyPackage - The story data package.
  */
-async function handleLoadFromComputer() {
-    try {
-        currentStoryDirHandle = null; // Reset first
-        const dirHandle = await window.showDirectoryPicker();
+async function handleStoryTransfer(storyPackage) {
+    if (storyPackage.type !== 'story-transfer') return;
 
+    const storyTitle = storyPackage.title;
+    if (!confirm(`You have received the story "${storyTitle}". Do you want to save and load it?`)) {
+        return;
+    }
+
+    try {
+        // Use the File System Access API to save the received files.
+        // We'll save it to a 'shared_stories' directory in the app's private storage.
+        const root = await navigator.storage.getDirectory();
+        const sharedDir = await root.getDirectoryHandle('shared_stories', { create: true });
+        const folderName = storyTitle.toLowerCase().replace(/\s+/g, '_').replace(/[^\w-]/g, '');
+        const storyDirHandle = await sharedDir.getDirectoryHandle(folderName, { create: true });
+
+        for (const [fileName, content] of Object.entries(storyPackage.files)) {
+            let fileHandle;
+            let writable;
+
+            if (fileName.startsWith('images/')) {
+                // Handle images which are Base64 encoded
+                const imageDirHandle = await storyDirHandle.getDirectoryHandle('images', { create: true });
+                const imageName = fileName.split('/').pop();
+                fileHandle = await imageDirHandle.getFileHandle(imageName, { create: true });
+                writable = await fileHandle.createWritable();
+                // Convert Base64 back to a Blob to write the file
+                const fetchRes = await fetch(content);
+                const blob = await fetchRes.blob();
+                await writable.write(blob);
+            } else {
+                // Handle text files (.txt, .json)
+                fileHandle = await storyDirHandle.getFileHandle(fileName, { create: true });
+                writable = await fileHandle.createWritable();
+                await writable.write(content);
+            }
+            await writable.close();
+        }
+
+        alert(`Story "${storyTitle}" has been saved! It will now be loaded.`);
+
+        // Dynamically add the new story to the modal list
+        const newStory = { title: storyTitle, name: folderName };
+        sharedStoryHandles[folderName] = storyDirHandle;
+        addSharedStoriesToModal([newStory]);
+
+        // Now, load the story we just saved.
+        // We can reuse the handleLoadFromComputer logic by passing it the directory handle.
+        // This is a bit of a conceptual stretch, but it avoids duplicating the loading code.
+        await loadStoryFromDirectory(storyDirHandle);
+
+    } catch (error) {
+        console.error('Error receiving or saving story:', error);
+        alert('Failed to save the received story. See console for details.');
+    }
+}
+
+/**
+ * Deletes a shared story from the Origin Private File System.
+ * @param {string} storyName - The folder name of the story to delete.
+ * @param {string} storyTitle - The display title of the story for the confirmation prompt.
+ */
+async function deleteSharedStory(storyName, storyTitle) {
+    if (!confirm(`Are you sure you want to permanently delete the story "${storyTitle}"?`)) {
+        return;
+    }
+
+    try {
+        const root = await navigator.storage.getDirectory();
+        const sharedDir = await root.getDirectoryHandle('shared_stories');
+        await sharedDir.removeEntry(storyName, { recursive: true });
+
+        // Remove from UI
+        const storyItemElement = dom.storyList.querySelector(`.story-item[data-shared-story-name="${storyName}"]`);
+        if (storyItemElement) {
+            const groupContent = storyItemElement.parentElement;
+            storyItemElement.remove();
+
+            // If the shared stories group content is now empty, remove the whole group.
+            if (groupContent && groupContent.classList.contains('story-group-content') && groupContent.children.length === 0) {
+                const storyGroup = groupContent.parentElement;
+                if (storyGroup && storyGroup.id === 'shared-stories-group') {
+                    storyGroup.remove();
+                }
+            }
+        }
+        delete sharedStoryHandles[storyName]; // Remove from cached handles
+
+    } catch (error) {
+        console.error(`Error deleting story "${storyName}":`, error);
+        alert('Could not delete the story. See the console for more details.');
+    }
+}
+
+/**
+ * Packages and sends a story to the connected peer.
+ * @param {string} storyName - The name (folder name) of the local story to share.
+ * @param {string} storyTitle - The title of the story.
+ */
+async function shareStory(storyName, storyTitle) {    
+    if (!confirm(`Are you sure you want to share the story "${storyTitle}"?`)) {
+        return;
+    }
+
+    const dirHandle = localStoryHandles[storyName];
+    if (!dirHandle) {
+        alert('Could not find the local story to share.');
+        return;
+    }
+    console.log(`Packaging story: ${storyTitle} from local directory handle.`);
+
+    try {
+        // --- Pre-flight check for missing files ---
+        const missingFiles = [];
+        let storyText;
+
+        // 1. Check for story.txt (critical)
+        try {
+            const storyFileHandle = await dirHandle.getFileHandle('story.txt');
+            const storyFile = await storyFileHandle.getFile();
+            storyText = await storyFile.text();
+        } catch (e) {
+            missingFiles.push('story.txt');
+        }
+
+        // 2. If story.txt exists, check for referenced images
+        if (storyText) {
+            const imageRegex = /\[IMAGE:\s*images\/(.*?)\s*\]/g;
+            let match;
+            let imagesDirHandle;
+            try {
+                imagesDirHandle = await dirHandle.getDirectoryHandle('images');
+            } catch (e) {
+                // If the images directory doesn't exist but is referenced, all images are missing.
+            }
+
+            while ((match = imageRegex.exec(storyText)) !== null) {
+                const imageName = match[1];
+                if (imagesDirHandle) {
+                    try {
+                        await imagesDirHandle.getFileHandle(imageName);
+                    } catch (e) {
+                        missingFiles.push(`images/${imageName}`);
+                    }
+                } else {
+                    // No images directory, so the file is definitely missing.
+                    missingFiles.push(`images/${imageName}`);
+                }
+            }
+        }
+
+        if (missingFiles.length > 0) {
+            const missingFilesList = missingFiles.map(f => `- ${f}`).join('\n');
+            alert(`Cannot share story "${storyTitle}". The following files are missing:\n\n${missingFilesList}\n\nPlease add these files to the story folder or correct the story text.`);
+            return;
+        }
+        // --- End of pre-flight check ---
+
+
+        const storyPackage = {
+            type: 'story-transfer',
+            title: storyTitle,
+            files: {}
+        };
+
+        // 1. Read the core text and JSON files from the directory handle
+        const fileNames = ['story.txt', 'phonetics.json', 'pronunciations.json'];
+        for (const fileName of fileNames) {
+            try {
+                const fileHandle = await dirHandle.getFileHandle(fileName);
+                const file = await fileHandle.getFile();
+                storyPackage.files[fileName] = await file.text();
+            } catch (e) {
+                console.warn(`Could not read optional file: ${fileName}`);
+            }
+        }
+
+        // 2. Parse story.txt to find and read images
+        // storyText is already loaded from the pre-flight check
+        if (storyText) {
+            const imageRegex = /\[IMAGE:\s*(.*?)\s*\]/g;
+            let match;
+            const imagePromises = [];
+
+            try {
+                const imagesDirHandle = await dirHandle.getDirectoryHandle('images');
+                while ((match = imageRegex.exec(storyText)) !== null) {
+                    const imagePath = match[1].trim(); // e.g., 'images/house.png'
+                    const imageName = imagePath.split('/').pop();
+                    imagePromises.push(
+                        imagesDirHandle.getFileHandle(imageName)
+                        .then(fileHandle => fileHandle.getFile())
+                        .then(blob => new Promise(resolve => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result);
+                            reader.readAsDataURL(blob);
+                        }))
+                        .then(base64 => (storyPackage.files[imagePath] = base64))
+                    );
+                }
+            } catch (e) {
+                console.log('No images directory found in this local story, or could not read images.');
+            }
+            await Promise.all(imagePromises);
+        }
+
+        // 3. Send the complete package
+        peerService.sendData(storyPackage);
+        alert(`Story "${storyTitle}" has been sent!`);
+
+    } catch (error) {
+        console.error('Error packaging or sending story:', error);
+        alert('Could not share the story. See console for details.');
+    }
+}
+
+/**
+ * Loads a story from a given directory handle.
+ * This is a refactor of handleLoadFromComputer to be more reusable.
+ * @param {FileSystemDirectoryHandle} dirHandle The handle to the story's directory.
+ */
+async function loadStoryFromDirectory(dirHandle) {
+    try {
         // Reset state for the new story
-        currentStoryPath = '';
+        currentStoryPath = ''; // Local stories don't have a web path
         localImageUrls = {};
-        // CRITICAL: Clear previous guides from memory before loading new ones.
         currentPhonetics = {};
         currentPronunciations = {};
 
@@ -532,7 +1247,6 @@ async function handleLoadFromComputer() {
             const phonetics = JSON.parse(await phoneticsFile.text());
             renderPhoneticsEditor(phonetics);
         } catch (e) {
-            currentPhonetics = {};
             renderPhoneticsEditor();
         }
 
@@ -543,7 +1257,6 @@ async function handleLoadFromComputer() {
             const pronunciations = JSON.parse(await pronunciationsFile.text());
             renderPronunciationEditor(pronunciations);
         } catch (e) {
-            currentPronunciations = {};
             renderPronunciationEditor();
         }
 
@@ -561,75 +1274,22 @@ async function handleLoadFromComputer() {
         }
 
         closeStoryModal();
-        // Store the handle for later use (e.g., saving)
-        currentStoryDirHandle = dirHandle;
-        renderStory();
+        currentStoryDirHandle = dirHandle; // Store the handle for potential re-saving
+        renderStory(); // Always render in reader view first.
     } catch (error) {
-        if (error.name !== 'AbortError') {
-            console.error('Error loading story from computer:', error);
-            alert('Could not load the story. Please ensure you select a valid story folder.');
-        }
+        console.error('Error in loadStoryFromDirectory:', error);
+        alert('Could not load the story from the selected directory.');
     }
 }
 
 /**
- * Handles loading a story project from the user's local computer directly into the creator mode.
+ * Updates the status text in the settings modal.
  */
-async function handleLoadToEdit() {
-    try {
-        currentStoryDirHandle = null; // Reset first
-        const dirHandle = await window.showDirectoryPicker();
-
-        // Reset state for the new story
-        currentStoryPath = '';
-        localImageUrls = {};
-        // CRITICAL: Clear previous guides from memory before loading new ones.
-        currentPhonetics = {};
-        currentPronunciations = {};
-
-        // 1. Load story.txt
-        const storyFileHandle = await dirHandle.getFileHandle('story.txt');
-        const storyFile = await storyFileHandle.getFile();
-        dom.storyInput.value = await storyFile.text();
-
-        // 2. Load phonetics.json (optional)
-        try {
-            const phoneticsFileHandle = await dirHandle.getFileHandle('phonetics.json');
-            const phoneticsFile = await phoneticsFileHandle.getFile();
-            const phonetics = JSON.parse(await phoneticsFile.text());
-            renderPhoneticsEditor(phonetics);
-        } catch (e) {
-            currentPhonetics = {};
-            renderPhoneticsEditor();
-        }
-
-        // 3. Load pronunciations.json (optional)
-        try {
-            const pronunciationsFileHandle = await dirHandle.getFileHandle('pronunciations.json');
-            const pronunciationsFile = await pronunciationsFileHandle.getFile();
-            const pronunciations = JSON.parse(await pronunciationsFile.text());
-            renderPronunciationEditor(pronunciations);
-        } catch (e) {
-            currentPronunciations = {};
-            renderPronunciationEditor();
-        }
-
-        // 4. Load images from the 'images' subdirectory (optional)
-        // We don't need to create ObjectURLs here as they are only used for rendering in the reader.
-        // The image paths in the text are sufficient for the creator.
-
-        // Store the handle for later use (e.g., saving)
-        currentStoryDirHandle = dirHandle;
-
-        // Use a timeout to ensure the UI has a chance to update before the alert blocks the thread.
-        setTimeout(() => alert(`Story loaded successfully into the editor.`), 0);
-
-
-    } catch (error) {
-        if (error.name !== 'AbortError') {
-            console.error('Error loading story to edit:', error);
-            alert('Could not load the story. Please ensure you select a valid story folder.');
-        }
+function updateFolderStatus() {
+    if (storiesDirHandle) {
+        dom.folderStatusText.textContent = `Set to "${storiesDirHandle.name}"`;
+    } else {
+        dom.folderStatusText.textContent = 'Not set.';
     }
 }
 
@@ -902,8 +1562,13 @@ async function saveUserStory() {
     const pronunciationsContent = JSON.stringify(pronunciationsObj, null, 2);
 
     try {
-        // Ask the user to pick a directory FIRST to preserve the user gesture.
-        const dirHandle = await window.showDirectoryPicker();
+        // Check if the main stories directory is set.
+        if (!await checkStoriesDirHandle()) {
+            alert('Please set your main "Stories Folder" in the Settings menu before saving.');
+            openSettingsModal();
+            return;
+        }
+        const dirHandle = storiesDirHandle;
 
         // Now, get the title.
         const title = prompt('Please enter a title for your story (this will be the folder name):');

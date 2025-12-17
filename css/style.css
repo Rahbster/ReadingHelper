@@ -45,6 +45,10 @@ header h1 {
 }
 
 .theme-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     background-color: var(--primary-color);
     color: white;
     border: none;
@@ -55,6 +59,12 @@ header h1 {
     font-weight: bold;
     cursor: pointer;
     transition: background-color 0.2s ease;
+}
+
+.theme-button svg {
+    width: 1.2em;
+    height: 1.2em;
+    fill: currentColor;
 }
 
 .theme-button:hover {
@@ -267,23 +277,72 @@ header h1 {
     width: 90%;
     max-width: 500px;
     text-align: center;
+    position: relative; /* This is crucial for positioning the close button */
+}
+
+.modal-close-btn {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    background: transparent;
+    border: none;
+    font-size: 2rem;
+    line-height: 1;
+    color: #aaa;
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.2s ease;
+}
+
+.modal-close-btn:hover {
+    color: #333;
+}
+
+
+#story-modal .modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: 85vh; /* Set a max height for the modal content */
 }
 
 #story-list {
     display: flex;
     flex-direction: column;
     margin: 20px 0;
-    max-height: 50vh;
-    overflow-y: auto; /* Re-enable scrolling on the main list container */
+    overflow-y: auto; /* Make this area scrollable */
+    flex-grow: 1; /* Allow it to take up available space */
+    min-height: 100px; /* Ensure it has some height even if empty */
 }
 
 .story-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     background-color: var(--background-color);
     padding: 15px;
     border-radius: 8px;
     cursor: pointer;
     transition: background-color 0.2s ease;
     font-weight: bold;
+}
+
+.story-item-title {
+    flex-grow: 1;
+}
+
+.story-share-btn {
+    background-color: var(--primary-hover);
+    font-size: 0.7em;
+    padding: 0.4em 0.8em;
+    margin-left: 15px;
+    /* Initially hidden, shown via JS when connected */
+    display: none; 
+}
+
+.story-delete-btn {
+    font-size: 0.7em;
+    padding: 0.4em 0.8em;
+    margin-left: 15px;
 }
 
 .story-group {
@@ -293,13 +352,16 @@ header h1 {
 }
 
 .story-group-header {
-    background-color: #eaf2f8;
+    background-color: var(--primary-color);
+    color: white;
     padding: 10px 15px;
     font-weight: bold;
     cursor: pointer;
     position: relative;
     user-select: none;
-    border-radius: 8px; /* Apply radius here */
+    /* Round the top corners */
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
 }
 
 .story-group-header::before {
@@ -311,6 +373,11 @@ header h1 {
 
 .story-group-header.collapsed::before {
     transform: rotate(-90deg);
+}
+
+.story-group-header.collapsed {
+    /* Round all corners when collapsed */
+    border-radius: 8px;
 }
 
 .story-group-content {
@@ -353,4 +420,93 @@ header h1 {
     align-items: stretch; /* Make buttons full width */
     justify-content: center;
     margin-top: 1rem;
+}
+
+/* --- PeerJS Modal Styles --- */
+#peer-role-selection {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-bottom: 1.5rem;
+}
+
+#host-id-display {
+    background-color: var(--background-color);
+    font-size: 1.5em;
+    font-weight: bold;
+    padding: 1rem;
+    border-radius: 8px;
+    letter-spacing: 2px;
+    border: 2px dashed var(--primary-color);
+}
+
+#join-id-input {
+    width: 100%;
+    padding: 0.5em;
+    font-size: 1.2em;
+    text-align: center;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    box-sizing: border-box;
+}
+
+.modal-footer-buttons {
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+}
+
+.peer-badge {
+    display: inline-block;
+    background-color: var(--destructive-color);
+    color: white;
+    font-size: 0.8em;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: 8px;
+    font-weight: bold;
+    vertical-align: middle;
+    transition: background-color 0.3s ease;
+}
+
+/* --- Settings Modal --- */
+#settings-modal .modal-content {
+    text-align: left; /* Override the default centered text for this modal */
+}
+
+#settings-modal h4 {
+    margin-top: 0;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+#settings-modal .settings-description {
+    font-size: 0.9em;
+    color: #666;
+    margin-bottom: 1.5rem;
+}
+
+#stories-folder-status {
+    background-color: var(--background-color);
+    border: 2px dashed var(--primary-color);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+#stories-folder-status p {
+    margin: 0;
+    font-size: 1em;
+    color: var(--text-color);
+}
+
+#stories-folder-status strong {
+    color: var(--primary-hover);
+}
+
+#folder-status-text {
+    font-weight: bold;
 }
