@@ -9,10 +9,13 @@ This project was created to provide a personalized and interactive reading tool 
 ## ✨ Key Features
 
 *   **Tap-to-Speak:** Simply tap on any word in a story to hear it read aloud using the browser's built-in speech synthesis. This provides immediate auditory feedback, reinforcing word recognition.
+*   **Syllable Breakdown:** Long-press on any word to see it broken down into syllables, helping with decoding complex words.
+*   **Story Sharing:** Connect two devices directly (Peer-to-Peer) to share stories instantly. Great for parents sending stories to a child's device.
+*   **Creator Mode:** Write your own stories, add images, and customize phonetic guides or pronunciations for specific words.
 *   **Parent's Dashboard:** The app tracks which words are tapped most frequently, displaying them in a "Tricky Words" list. This provides a simple, data-driven way for parents to see which words their child may need extra practice with.
 *   **PWA & Offline Ready:** As a Progressive Web App, it can be easily "installed" on any device (desktop, tablet, or phone) for a native app-like experience. It works completely offline after the first visit.
-*   **Simple & Clean UI:** Features a child-friendly interface with large, readable text and minimal distractions, keeping the focus on the story.
-*   **Custom Content:** Paste any story, paragraph, or list of words into the app to create a new reading session.
+*   **Dark Mode:** Toggle between light and dark themes for comfortable reading in any lighting.
+*   **Simple & Clean UI:** Features a child-friendly interface with large, readable text and minimal distractions.
 
 ## 🛠️ Technology Stack
 
@@ -21,7 +24,10 @@ This project is built with a focus on simplicity and modern web standards, witho
 *   **Frontend**: HTML5, CSS3, Vanilla JavaScript (ES6 Modules)
 *   **Speech**: Web Speech Synthesis API
 *   **Offline Capabilities**: Progressive Web App (PWA) with a Service Worker and Web App Manifest.
-*   **Data Storage**: Browser `localStorage` for tracking word statistics.
+*   **Connectivity**: PeerJS for WebRTC peer-to-peer data transfer.
+*   **Data Storage**:
+    *   Browser `localStorage` for tracking word statistics and settings.
+    *   **Origin Private File System (OPFS)** for storing created and shared stories locally.
 
 ## 🚀 How to Run Locally
 
@@ -34,21 +40,26 @@ This project is built with a focus on simplicity and modern web standards, witho
 
 ## 📖 How to Use
 
-1.  **Load a Story**:
-    *   Open the application.
-    *   Click the "Choose a Story" button to open the library.
-    *   Select a story from the list. The story text and its associated learning aids will be loaded automatically.
+1.  **Read a Story**:
+    *   Click the "Choose a Story" button in the header.
+    *   Select a story from the library. You can read built-in stories, ones you've created, or stories shared with you.
+    *   Tap words to hear them. Long-press words to see syllables.
 
-2.  **Read and Interact**:
-    *   The story will appear in the main display area.
-    *   Tap on any word to hear it spoken aloud. The word will be highlighted as it's read.
+2.  **Create a Story**:
+    *   Go to the Dashboard and click "Enter Creator Mode".
+    *   Type or paste your story.
+    *   Add images, custom phonetics (e.g., "Colonel" -> "Ker-nel"), or specific pronunciations.
+    *   Save the story to your local library.
 
-3.  **Check the Dashboard**:
-    *   Click the "Dashboard" button in the header.
-    *   Here you will see a list of the most frequently tapped words, helping you identify which ones might be challenging.
-    *   Click "Back to Reader" to return to the story.
+3.  **Connect & Share**:
+    *   Open the menu and click "Connect".
+    *   Choose "Host" on one device and "Joiner" on the other. Enter the Host ID.
+    *   Once connected, go to your library and click "Share" on any local story to send it to the connected peer.
 
-4.  **Install as an App**:
+4.  **Dashboard**:
+    *   Check the "Tricky Words" list to see which words are being looked up the most.
+
+5.  **Install as an App**:
     *   On a supported browser (like Chrome or Edge on desktop, or Safari on iOS/Android), look for the "Install" icon in the address bar or the "Add to Home Screen" option in the share menu.
     *   This will add the Reading Helper to your device for easy, offline access.
 
