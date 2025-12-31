@@ -1,8 +1,19 @@
-const PEER_PREFIX = 'readinghelper-';
+let peerPrefix = 'app-';
+let peerConfig = {};
 let peer = null;
 let connections = [];
 let peerId = null;
 let onConnectionChangeCallback = () => {};
+
+/**
+ * Configures the peer service with a specific prefix and PeerJS options.
+ * @param {string} prefix - The prefix to use for peer IDs (e.g., 'myapp-').
+ * @param {object} config - Configuration object for the Peer constructor.
+ */
+export function initialize(prefix, config = {}) {
+    if (prefix) peerPrefix = prefix;
+    peerConfig = config;
+}
 
 /**
  * Initializes the PeerJS object for the host and sets up event listeners.
@@ -11,20 +22,17 @@ let onConnectionChangeCallback = () => {};
  * @param {function} onData - Callback function when data is received.
  * @param {function} onError - Callback function for any PeerJS errors.
  * @param {function} onConnectionChange - Callback function when the number of connections changes.
+ * @param {string} [customId] - Optional custom ID to use instead of a random one.
  */
-export function createHost(onOpen, onConnect, onData, onError, onConnectionChange) {
+export function createHost(onOpen, onConnect, onData, onError, onConnectionChange, customId = null) {
     destroyPeer(); // Ensure any existing peer is destroyed
     onConnectionChangeCallback = onConnectionChange || (() => {});
-    peerId = `${PEER_PREFIX}${Math.floor(100000 + Math.random() * 900000)}`;
-    peer = new Peer(peerId, {
-        // For simplicity in a local-first app, we don't need a secure connection for the signaling server.
-        // For a deployed app, you'd use:
-        // host: '0.peerjs.com', secure: true, port: 443
-    });
+    peerId = customId ? `${peerPrefix}${customId}` : `${peerPrefix}${Math.floor(100000 + Math.random() * 900000)}`;
+    peer = new Peer(peerId, peerConfig);
 
     peer.on('open', (id) => {
         console.log('PeerJS Host is open. ID:', id);
-        if (onOpen) onOpen(id.replace(PEER_PREFIX, ''));
+        if (onOpen) onOpen(id.replace(peerPrefix, ''));
     });
 
     peer.on('connection', (conn) => {
@@ -51,11 +59,11 @@ export function createHost(onOpen, onConnect, onData, onError, onConnectionChang
 export function joinHost(hostId, onConnect, onData, onError, onConnectionChange) {
     destroyPeer(); // Ensure any existing peer is destroyed
     onConnectionChangeCallback = onConnectionChange || (() => {});
-    peer = new Peer(); // Joiner gets a random ID from the server
+    peer = new Peer(peerConfig); // Joiner gets a random ID from the server
 
     peer.on('open', () => {
         console.log('PeerJS Joiner is open. Connecting to host:', hostId);
-        const fullHostId = `${PEER_PREFIX}${hostId}`;
+        const fullHostId = `${peerPrefix}${hostId}`;
         const conn = peer.connect(fullHostId, { reliable: true });
         connections.push(conn);
         onConnectionChangeCallback(connections.length);

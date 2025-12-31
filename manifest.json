@@ -1,8 +1,9 @@
 {
+  "id": "index.html",
   "name": "Reading Helper",
   "short_name": "Reader",
   "description": "An interactive reading assistant.",
-  "start_url": "index.html",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#F0F8FF",
   "theme_color": "#A9C9FF",
@@ -10,12 +11,14 @@
     {
       "src": "icons/icon-192x192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "icons/icon-512x512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
