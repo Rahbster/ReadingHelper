@@ -1,0 +1,81 @@
+/* Chat Modal Styles */
+#peer-chat {
+    display: flex;
+    flex-direction: column;
+    height: 60vh;
+    max-height: 500px;
+}
+
+#messages {
+    flex: 1;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 10px;
+    background-color: #f9f9f9;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.message {
+    max-width: 80%;
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 0.95rem;
+    position: relative;
+}
+
+.message .meta {
+    font-size: 0.75rem;
+    margin-bottom: 2px;
+    opacity: 0.8;
+}
+
+.message.self {
+    align-self: flex-end;
+    background-color: var(--primary-color);
+    color: white;
+    border-bottom-right-radius: 2px;
+}
+
+.message.self .meta {
+    text-align: right;
+    color: #e0e0e0;
+}
+
+.message.remote {
+    align-self: flex-start;
+    background-color: #e9ecef;
+    color: #333;
+    border-bottom-left-radius: 2px;
+}
+
+.message.remote .meta {
+    text-align: left;
+    color: #666;
+}
+
+.chat-input-area {
+    display: flex;
+    gap: 10px;
+}
+
+#msg-input {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 20px;
+}
+
+/* Dark Mode Support */
+body[data-theme="dark"] #messages {
+    background-color: #252525;
+    border-color: #444;
+}
+
+body[data-theme="dark"] .message.remote {
+    background-color: #333;
+    color: #e0e0e0;
+}

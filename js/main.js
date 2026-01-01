@@ -1,5 +1,6 @@
 import * as peerService from './peer-service.js';
 import { ToastManager } from './ToastManager.js';
+import { ChatManager } from './ChatManager.js';
 import { showPeerConnectionModal } from './modals/peer_connection_modal.js';
 
 const dom = {
@@ -40,6 +41,10 @@ const dom = {
     overlay: document.getElementById('overlay'),
     themeToggle: document.getElementById('theme-toggle'),
     settingsNameInput: document.getElementById('settings-name'),
+    // Chat
+    btnOpenChat: document.getElementById('btn-open-chat'),
+    chatModal: document.getElementById('chat-modal'),
+    closeChatModalBtn: document.getElementById('close-chat-modal'),
 };
 
 const toastManager = new ToastManager();
@@ -60,6 +65,13 @@ let sharedStoryHandles = {}; // Holds directory handles for shared stories, keye
 let localStoryHandles = {}; // Holds directory handles for local stories, keyed by folder name
 let pendingStoryHandles = {}; // Holds directory handles for pending (inbox) stories
 let isPeerConnected = false;
+
+// Adapter to allow ChatManager to use peerService
+const peerAdapter = {
+    send: (data) => peerService.sendData(data)
+};
+
+const chatManager = new ChatManager(peerAdapter, () => ({ name: localStorage.getItem('readinghelper_display_name') || 'Anonymous' }));
 
 /**
  * Unregisters service workers, clears caches, and all local storage to perform a full reset.
@@ -167,6 +179,10 @@ function setupEventListeners() {
         { element: dom.overlay, event: 'click', handler: closeNav },
         { element: dom.themeToggle, event: 'click', handler: toggleTheme },
         { element: dom.settingsNameInput, event: 'change', handler: updateDisplayName },
+
+        // Chat
+        { element: dom.btnOpenChat, event: 'click', handler: openChatModal },
+        { element: dom.closeChatModalBtn, event: 'click', handler: closeChatModal },
     ];
 
     listeners.forEach(({ element, event, handler }) => {
@@ -215,6 +231,16 @@ function initTheme() {
     }
 }
 
+function openChatModal() {
+    closeNav();
+    dom.chatModal.classList.remove('hidden');
+    chatManager.resetUnread();
+}
+
+function closeChatModal() {
+    dom.chatModal.classList.add('hidden');
+}
+
 /**
  * Handles the main connect button click.
  */
@@ -227,6 +253,7 @@ function handleConnectClick() {
             // but since modal is closed, we manually update or rely on peerService callback if we had a global listener.
             // Since we don't have a global listener, we update state here.
             isPeerConnected = false;
+            chatManager.enable(false);
             dom.connectBtn.textContent = 'Connect';
             dom.connectBtn.classList.remove('connected');
             loadStoryLibrary(); // Refresh to hide share buttons
@@ -235,11 +262,16 @@ function handleConnectClick() {
         showPeerConnectionModal(toastManager, {
             appPrefix: 'readinghelper',
             peerPrefix: 'readinghelper-',
-            onDataReceived: (data) => {
-                if (data.type === 'story-transfer') handleStoryTransfer(data);
+            onDataReceived: (data, peerName) => {
+                if (data.type === 'story-transfer') {
+                    handleStoryTransfer(data);
+                } else if (data.type === 'chat') {
+                    chatManager.handleIncomingMessage(data.content, peerName || 'Peer');
+                }
             },
             onConnectionChange: (connected) => {
                 isPeerConnected = connected;
+                chatManager.enable(connected);
                 dom.connectBtn.textContent = connected ? 'Disconnect' : 'Connect';
                 dom.connectBtn.classList.toggle('connected', connected);
                 loadStoryLibrary(); // Refresh to show/hide share buttons

@@ -9,6 +9,7 @@
     <link rel="apple-touch-icon" href="icons/icon-192x192.png">
     <link rel="icon" href="icons/icon-tab.png" type="image/png">
     <link rel="stylesheet" href="css/sidenav.css">
+    <link rel="stylesheet" href="css/chat.css">
     <script src="js/main.js" type="module" defer></script>
     <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
     <script>
@@ -65,8 +66,15 @@
         </div>
 
         <div class="sidenav-item">
+            <button id="btn-open-chat" class="theme-button full-width" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+                <span>Quick Chat</span> <span id="chat-badge" class="badge hidden">0</span>
+            </button>
+        </div>
+
+        <div class="sidenav-item">
             <button id="share-story-btn" class="theme-button full-width" disabled>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;"><path d="M20.54 5.23l-1.39-1.39c-.19-.19-.51-.19-.7 0L10 12.29 10 8H4v6h4v-2.29l8.45-8.46c.19-.2.19-.51.09-.7zM6 12h2v-2H6v2zm13.46-6.33l-1.06-1.06c-.2-.2-.51-.2-.71 0l-.85.85 1.77 1.77.85-.85c.2-.2.2-.52 0-.71z"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
                 <span>Share Story</span>
             </button>
         </div>
@@ -162,6 +170,21 @@
                 <button id="load-from-url-btn" class="theme-button">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
                     <span>Load from Web...</span></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Modal -->
+    <div id="chat-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Quick Chat</h2>
+            <button id="close-chat-modal" class="modal-close-btn" aria-label="Close">&times;</button>
+            <div id="peer-chat">
+                <div id="messages"></div>
+                <div class="chat-input-area">
+                    <input type="text" id="msg-input" placeholder="Type a message...">
+                    <button id="btn-send" class="theme-button">Send</button>
+                </div>
             </div>
         </div>
     </div>
