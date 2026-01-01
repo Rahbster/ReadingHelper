@@ -353,8 +353,6 @@ header h1 {
     font-size: 0.7em;
     padding: 0.4em 0.8em;
     margin-left: 15px;
-    /* Initially hidden, shown via JS when connected */
-    display: none; 
 }
 
 .story-delete-btn {
@@ -407,32 +405,6 @@ header h1 {
 }
 .story-item:hover {
     background-color: var(--item-hover-bg);
-}
-
-.story-item[data-pending-story-name] {
-    cursor: pointer;
-}
-
-/* --- Preview Banner --- */
-.preview-banner {
-    background-color: var(--highlight-color);
-    color: #333;
-    padding: 1rem;
-    margin-bottom: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-}
-
-.preview-banner-content {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 1rem;
-}
-
-.preview-banner-content span {
-    font-weight: bold;
 }
 
 /* --- Syllable Pop-up --- */
