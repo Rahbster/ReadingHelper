@@ -5,6 +5,7 @@ const appShellFiles = [
     './index.html',
     './css/style.css',
     './js/main.js',
+    './js/ai-manager.js',
     './js/ToastManager.js',
     './js/modals/peer_connection_modal.js',
     './js/ChatManager.js',
@@ -53,7 +54,7 @@ self.addEventListener('install', (event) => {
                 ...appShellFiles, 
                 ...storyFiles, 
                 ...imageFiles,
-                'https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js' // Add external library
+                './js/peerjs.min.js' // Cache the local library file - This line is already correct.
             ])];
 
             const cache = await caches.open(CACHE_NAME);

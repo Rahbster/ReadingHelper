@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to get a Google AI API Key</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #f4f7f9;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        h1 { color: #1a73e8; margin-top: 0; }
+        .step-content { min-height: 180px; margin-top: 20px; font-size: 1.1rem; }
+        .nav-buttons { margin-top: 30px; display: flex; justify-content: space-between; }
+        button {
+            padding: 10px 25px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: opacity 0.2s;
+        }
+        #prev-btn { background: #e0e0e0; color: #555; }
+        #next-btn { background: #1a73e8; color: white; }
+        button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .indicator { margin-top: 20px; color: #888; font-size: 0.9rem; }
+        .action-button {
+            display: inline-block;
+            margin-top: 15px;
+            background: #34a853;
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+        }
+        .step-warning {
+            border: 2px solid #d93025;
+            background-color: #fce8e6;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        .warning-icon {
+            font-size: 2rem;
+            display: block;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Magic Illustrator Setup</h1>
+        <div id="step-container" class="step-content">
+            <!-- Content injected by JS -->
+        </div>
+        <div class="nav-buttons">
+            <button id="prev-btn">← Previous</button>
+            <button id="next-btn">Next →</button>
+        </div>
+        <div class="indicator" id="step-indicator">Step 1 of 5</div>
+    </div>
+
+    <script>
+        const steps = [
+            {
+                title: "Step 1: Open Google AI Studio",
+                text: "First, you need to open the Google AI Studio dashboard. Click the green button below to open it in a new tab, then come back to this page for the next step.",
+                buttonLink: "https://aistudio.google.com/app/apikey",
+                buttonText: "Open Google AI Studio"
+            },
+            {
+                title: "Step 2: Create a Project",
+                text: "Create a new project named <b>'Reading Helper'</b>. If you are using Google Cloud, ensure the <b>'Generative Language API'</b> and <b>'Vertex AI API'</b> are enabled for this project. In AI Studio, this is usually automatic for Generative Language."
+            },
+            {
+                title: "Step 3: Generate Your Key",
+                text: "Click <b>'Get API key'</b> in the left sidebar. Then, click the blue button to create a key. Make sure to select your <b>'Reading Helper'</b> project from the list that appears."
+            },
+            {
+                title: "Step 4: Keep it Secret",
+                text: "Your API key is like a password. Never share it with anyone, post it on social media, or send it in emails. If someone gets your key, they could use your AI allowance.",
+                isWarning: true
+            },
+            {
+                title: "Step 5: Stay Free (Set Spend Limit)",
+                text: "While the Free Tier is usually enough, you can ensure you are never charged by setting a 'Budget' to <b>$0.00</b> in the Google Cloud Billing console. This acts as a safety switch.",
+                buttonLink: "https://console.cloud.google.com/billing",
+                buttonText: "Open Billing Console"
+            },
+            {
+                title: "Step 6: Copy and Paste",
+                text: "Go back to the AI Studio tab, click the <b>'Copy'</b> button next to your key, then return to the Reading Helper. Open the Menu (☰) and paste it into the API Key box."
+            },
+            {
+                title: "All Done!",
+                text: "Come back to the Reading Helper, open the Menu (☰), and paste the key into the 'Google AI API Key' box. You're all set!"
+            }
+        ];
+
+        let currentStep = 0;
+        const container = document.getElementById('step-container');
+        const indicator = document.getElementById('step-indicator');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+
+        function updateUI() {
+            const step = steps[currentStep];
+            let html = `
+                <h3>${step.title}</h3>
+                <p>${step.text}</p>
+            `;
+
+            if (step.isWarning) {
+                html = `
+                    <div class="step-warning">
+                        <span class="warning-icon">⚠️</span>
+                        ${html}
+                    </div>
+                `;
+            }
+
+            container.innerHTML = `
+                ${html}
+                ${step.buttonLink ? `
+                    <a href="${step.buttonLink}" target="_blank" class="action-button">
+                        ${step.buttonText}
+                    </a>` : ''}
+            `;
+            indicator.textContent = `Step ${currentStep + 1} of ${steps.length}`;
+            prevBtn.disabled = currentStep === 0;
+            
+            if (currentStep === steps.length - 1) {
+                nextBtn.textContent = "Finish";
+            } else {
+                nextBtn.textContent = "Next →";
+            }
+        }
+
+        nextBtn.addEventListener('click', () => {
+            if (currentStep < steps.length - 1) {
+                currentStep++;
+                updateUI();
+            } else {
+                window.close();
+            }
+        });
+
+        prevBtn.addEventListener('click', () => {
+            if (currentStep > 0) {
+                currentStep--;
+                updateUI();
+            }
+        });
+
+        updateUI();
+    </script>
+</body>
+</html>

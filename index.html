@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="css/sidenav.css">
     <link rel="stylesheet" href="css/chat.css">
     <script src="js/main.js" type="module" defer></script>
-    <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+    <script src="js/peerjs.min.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -80,6 +80,18 @@
         </div>
 
         <div class="sidenav-item">
+            <label for="settings-google-api-key">Google AI API Key:</label>
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px;">
+                <input type="password" id="settings-google-api-key" placeholder="Paste key here" style="flex: 1; padding: 8px; font-size: 1rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                <span id="api-key-status"></span>
+            </div>
+            <button id="test-api-key-btn" class="theme-button full-width" title="Test Connection">Verify API Key</button>
+            <button id="get-api-key-help-btn" class="theme-button full-width" style="margin-top: 8px; font-size: 0.8rem;">
+                Need help getting a key?
+            </button>
+        </div>
+
+        <div class="sidenav-item">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span>Theme</span>
                 <button id="theme-toggle" aria-label="Toggle Theme" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">🌓</button>
@@ -103,6 +115,10 @@
                         <div id="pronunciations-editor"></div>
                         <button id="add-pronunciation-btn" class="theme-button">Add Pronunciation</button>
                     </div>
+                </div>
+                <div class="creator-ai-controls" style="margin-bottom: 15px; display: flex; gap: 10px;">
+                    <button id="illustrate-story-btn" class="theme-button secondary">✨ Illustrate Full Story</button>
+                    <button id="magic-image-btn" class="theme-button secondary">🖼️ Magic Image (Selection)</button>
                 </div>
                 <div class="input-buttons">
                     <button id="add-image-btn" class="theme-button">

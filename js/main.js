@@ -3,6 +3,7 @@ import * as storyManager from '../story-manager.js';
 import { ToastManager } from './ToastManager.js';
 import { ChatManager } from './ChatManager.js';
 import { showPeerConnectionModal } from './modals/peer_connection_modal.js';
+import * as aiManager from './ai-manager.js';
 
 const dom = {
     storyInput: document.getElementById('story-input'),
@@ -25,6 +26,8 @@ const dom = {
     loadFromUrlBtn: document.getElementById('load-from-url-btn'),
     connectBtn: document.getElementById('connect-btn'),
     // Creator mode buttons
+    illustrateStoryBtn: document.getElementById('illustrate-story-btn'),
+    magicImageBtn: document.getElementById('magic-image-btn'),
     addImageBtn: document.getElementById('add-image-btn'),
     addPhoneticBtn: document.getElementById('add-phonetic-btn'),
     phoneticsEditor: document.getElementById('phonetics-editor'),
@@ -38,6 +41,10 @@ const dom = {
     overlay: document.getElementById('overlay'),
     themeToggle: document.getElementById('theme-toggle'),
     settingsNameInput: document.getElementById('settings-name'),
+    googleApiKeyInput: document.getElementById('settings-google-api-key'),
+    apiKeyStatus: document.getElementById('api-key-status'),
+    testApiKeyBtn: document.getElementById('test-api-key-btn'),
+    getApiKeyHelpBtn: document.getElementById('get-api-key-help-btn'),
     // Chat
     btnOpenChat: document.getElementById('btn-open-chat'),
     chatModal: document.getElementById('chat-modal'),
@@ -62,6 +69,11 @@ let currentlySpeakingElement = null; // Tracks the element currently being spoke
 let currentStoryId = null; // Holds the ID of the currently loaded user story
 let sessionImages = {}; // Holds Base64 images for the current session
 let isPeerConnected = false;
+
+/**
+ * Shared reference for the live preview listener to allow proper cleanup.
+ */
+const handleStoryInputPreview = () => renderStory();
 
 // Adapter to allow ChatManager to use peerService
 const peerAdapter = {
@@ -109,6 +121,11 @@ async function resetApplication() {
 async function init() {
     initTheme();
     loadWordStats();
+    aiManager.init({
+        toastManager,
+        renderStory,
+        openNav
+    });
     await loadStoryLibrary();
     setupEventListeners();
     renderDashboard();
@@ -137,6 +154,8 @@ function setupEventListeners() {
         { element: dom.storyList, event: 'click', handler: handleStoryListClick },
 
         // Creator Mode
+        { element: dom.illustrateStoryBtn, event: 'click', handler: illustrateStoryWithGemini },
+        { element: dom.magicImageBtn, event: 'click', handler: insertMagicImageAtCursor },
         { element: dom.addImageBtn, event: 'click', handler: addImageToStory },
         { element: dom.addPhoneticBtn, event: 'click', handler: () => addPhoneticPair() },
         { element: dom.phoneticsEditor, event: 'click', handler: handlePhoneticsEditorClick },
@@ -150,6 +169,9 @@ function setupEventListeners() {
         { element: dom.overlay, event: 'click', handler: closeNav },
         { element: dom.themeToggle, event: 'click', handler: toggleTheme },
         { element: dom.settingsNameInput, event: 'change', handler: updateDisplayName },
+        { element: dom.googleApiKeyInput, event: 'change', handler: updateGoogleApiKey },
+        { element: dom.testApiKeyBtn, event: 'click', handler: testGeminiConnection },
+        { element: dom.getApiKeyHelpBtn, event: 'click', handler: openApiKeyHelp },
 
         // Chat
         { element: dom.btnOpenChat, event: 'click', handler: openChatModal },
@@ -171,6 +193,12 @@ function setupEventListeners() {
         if (e.target.closest('.speakable-word')) e.preventDefault();
     });
 
+    dom.storyDisplay.addEventListener('click', (e) => {
+        if (e.target.classList.contains('retry-image-btn')) {
+            aiManager.retryGeneration(e.target.dataset.filename, sessionImages, localImageUrls);
+        }
+    });
+
     // Add listeners to the window to catch the end of a press anywhere
     window.addEventListener('mouseup', handlePressEnd);
     window.addEventListener('touchend', handlePressEnd);
@@ -184,11 +212,23 @@ function openNav() {
     if (dom.settingsNameInput) {
         dom.settingsNameInput.value = name;
     }
+    // Populate API Key
+    const apiKey = localStorage.getItem('google_ai_api_key') || '';
+    if (dom.googleApiKeyInput) {
+        dom.googleApiKeyInput.value = apiKey;
+    }
 }
 
 function closeNav() {
     dom.sidenav.style.width = "0";
     dom.overlay.style.display = "none";
+}
+
+/**
+ * Opens the Google AI Studio API key page and an instructions page in new tabs.
+ */
+function openApiKeyHelp() {
+    window.open('instructions.html', '_blank');
 }
 
 function toggleTheme() {
@@ -336,30 +376,112 @@ function addLocalStoriesToModal(stories) {
 }
 
 /**
+ * Updates the Google AI API Key in local storage.
+ * @param {Event} event 
+ */
+function updateGoogleApiKey(event) {
+    const key = event.target.value.trim();
+    localStorage.setItem('google_ai_api_key', key);
+    if (dom.apiKeyStatus) dom.apiKeyStatus.textContent = ''; // Reset status icon
+    toastManager.show('Google AI API Key saved locally.', 'success');
+}
+
+/**
+ * Tests the Google AI API key by making a simple request to the Gemini models endpoint.
+ */
+async function testGeminiConnection() {
+    const apiKey = dom.googleApiKeyInput.value.trim() || localStorage.getItem('google_ai_api_key');
+    await aiManager.testGeminiConnection(apiKey, dom.apiKeyStatus);
+}
+
+/**
+ * Uses Google Gemini to analyze the entire story and rewrite it with illustrations.
+ */
+async function illustrateStoryWithGemini() {
+    await aiManager.illustrateStory(dom.storyInput.value.trim(), (text) => {
+        dom.storyInput.value = text;
+        renderStory();
+    });
+}
+
+/**
+ * Uses Google Gemini to generate a single "Magic Image" based on selected text
+ */
+async function insertMagicImageAtCursor() {
+    await aiManager.insertMagicImage(dom.storyInput.value, dom.storyInput.selectionStart, dom.storyInput.selectionEnd, (text) => {
+        dom.storyInput.value = text;
+        renderStory();
+    });
+}
+
+/**
  * Renders the text from the input area into the story display area,
  * making each word interactive.
  */
 function renderStory() {
     const text = dom.storyInput.value; // We still use storyInput as the source of truth
+    const aiMetadata = aiManager.getMetadata();
+
     // Split by spaces and punctuation, but keep them for rendering.
     // This regex splits on spaces, newlines, and common punctuation.
     const parts = text.split(/(\[IMAGE:.*?\]|[ \n.,!?;:"()])/);
-
     const html = parts.map(part => {
         if (!part) return '';
 
         // Check for our custom image tag
         const imageMatch = part.match(/^\[IMAGE:(.*?)\]$/);
         if (imageMatch) {
-            const imagePath = imageMatch[1].trim();
-            const imageName = imagePath.split('/').pop(); // e.g., 'house.png'
+            const imageIdentifier = imageMatch[1].trim(); // This can be a path or an ai-gen-filename
+            const isAiGenerated = imageIdentifier.startsWith('ai-gen-');
+            const isFilePath = !isAiGenerated && /\.(jpg|jpeg|png|gif|webp)$/i.test(imageIdentifier);
             
-            // Use a local object URL if available, otherwise construct path from web.
-            const fullImagePath = localImageUrls[imageName] 
-                ? localImageUrls[imageName]
-                : `${currentStoryPath}${imagePath}`;
+            if (isFilePath) {
+                const imageName = imageIdentifier.split('/').pop();
+                const fullImagePath = localImageUrls[imageName] || `${currentStoryPath}${imageIdentifier}`.replace(/ /g, '%20');
+                return `<img src="${fullImagePath}" alt="Story illustration" class="story-image">`;
+            } else if (isAiGenerated) {
+                const fileName = imageIdentifier;
+                let metadata = aiMetadata[fileName];
 
-            return `<img src="${fullImagePath}" alt="Story illustration" class="story-image">`;
+                if (!metadata) {
+                    // This can happen if a story is loaded with an AI tag but no metadata (e.g., manual edit or old save)
+                    // Try to extract prompt from sessionImages if it was saved as Base64
+                    const base64Data = sessionImages[fileName];
+                    if (base64Data) {
+                        // If we have base64, it's already a success
+                        metadata = { prompt: "Loaded AI Image", status: 'success' };
+                        aiMetadata[fileName] = metadata;
+                        localImageUrls[fileName] = base64Data; // Ensure it's mapped for rendering
+                    } else {
+                        // If no metadata and no base64, it's a new pending generation
+                        metadata = { prompt: "AI Image", status: 'pending' }; // Default prompt
+                        aiMetadata[fileName] = metadata;
+                    }
+                }
+
+                if (metadata.status === 'success') {
+                    return `<img src="${localImageUrls[fileName]}" alt="${metadata.prompt}" class="story-image">`;
+                } else if (metadata.status === 'generating') {
+                    return `<div id="${fileName}" class="ai-prompt-placeholder generating" title="Drawing: ${metadata.prompt}"><div class="spinner"></div><span>Drawing: <i>${metadata.prompt}</i></span></div>`;
+                } else if (metadata.status === 'failed') {
+                    // Only show technical error and retry button if in Creator Mode. 
+                    // For the reader, show a generic message or nothing.
+                    const retryBtn = isCreatorMode ? `<button class="retry-image-btn" data-filename="${fileName}">Retry</button>` : '';
+                    const errorText = isCreatorMode ? `Failed: ${metadata.errorMessage || 'Unknown error'}` : 'The AI illustrator is taking a short break.';
+                    
+                    return `<div id="${fileName}" class="ai-prompt-placeholder failed" title="${metadata.errorMessage || 'Unknown error'}"><span>${isCreatorMode ? '❌ ' : '🎨 '}${errorText}</span>${retryBtn}</div>`;
+                } else { // pending or unknown
+                    // Only show "Generate Now" button if in Creator Mode.
+                    const generateBtn = isCreatorMode ? `<button class="retry-image-btn" data-filename="${fileName}">Generate Now</button>` : '';
+                    const pendingText = isCreatorMode ? `Pending: ${metadata.prompt}` : 'An illustration is coming soon!';
+                    return `<div id="${fileName}" class="ai-prompt-placeholder pending" title="${metadata.prompt}"><div class="spinner"></div><span>${pendingText}</span>${generateBtn}</div>`;
+                }
+            } else {
+                // This is a text prompt that is not an AI-generated filename.
+                // This case should ideally not happen if the AI generation process is complete.
+                // For now, treat it as a generic prompt placeholder.
+                return `<div class="ai-prompt-placeholder" title="AI Image Prompt: ${imageIdentifier}">🎨 <i>${imageIdentifier}</i></div>`;
+            }
         }
 
         // Check if the part is a word (contains letters)
@@ -547,7 +669,6 @@ function clearAllStats() {
 function toggleCreatorMode() {
     isCreatorMode = !isCreatorMode;
     dom.creatorArea.classList.toggle('hidden', !isCreatorMode);
-    dom.storyDisplay.classList.toggle('hidden', isCreatorMode);
 
     if (isCreatorMode) {
         dom.creatorModeBtn.querySelector('span').textContent = 'Exit Creator Mode';
@@ -555,15 +676,14 @@ function toggleCreatorMode() {
         if (!dom.dashboardView.classList.contains('hidden')) {
             toggleDashboard();
         }
-        currentStoryId = null; // Reset ID for new story
-        sessionImages = {}; // Reset session images
-        dom.storyInput.value = ''; // Clear the text area
-        dom.storyInput.placeholder = 'Write your new story here...';
+
+        dom.storyInput.addEventListener('input', handleStoryInputPreview);
+        renderStory();
         renderPhoneticsEditor(); // Clear and render the phonetics editor
         renderPronunciationEditor(); // Clear and render the editor
-
     } else {
         dom.creatorModeBtn.querySelector('span').textContent = 'Enter Creator Mode';
+        dom.storyInput.removeEventListener('input', handleStoryInputPreview);
         renderStory(); // Render whatever is in the text area when exiting
     }
 }
@@ -848,15 +968,18 @@ function loadUserStory(id) {
     renderPhoneticsEditor(story.phonetics || {});
     renderPronunciationEditor(story.pronunciations || {});
 
-    localImageUrls = {};
-    sessionImages = {};
+    localImageUrls = {}; // Clear local image URLs
+    sessionImages = {}; // Clear session images (will be repopulated from story.images)
+    aiManager.clearMetadata();
+
     if (story.images) {
         for (const [name, base64] of Object.entries(story.images)) {
-            sessionImages[name] = base64; // Keep for saving
-            fetch(base64).then(res => res.blob()).then(blob => {
-                localImageUrls[name] = URL.createObjectURL(blob);
-            });
+            sessionImages[name] = base64; // Store Base64 data for both uploaded and generated images
+            localImageUrls[name] = base64; // Map Base64 for the renderer
         }
+    }
+    if (story.aiImageMetadata) {
+        aiManager.setMetadata(story.aiImageMetadata);
     }
 
     closeStoryModal();
@@ -1101,6 +1224,7 @@ async function addImageToStory() {
             const base64 = event.target.result;
             const fileName = file.name;
             sessionImages[fileName] = base64;
+            localImageUrls[fileName] = base64; // Map Base64 for the renderer
 
             // Insert tag
             const imageTag = `[IMAGE: ${fileName}]`;
@@ -1167,12 +1291,18 @@ async function saveUserStory() {
         // Process images in text
         const imageRegex = /\[IMAGE:\s*(.*?)\s*\]/g;
         let match;
-        while ((match = imageRegex.exec(storyText)) !== null) {
-            const imagePath = match[1].trim();
-            const imageName = imagePath.split('/').pop();
-            if (sessionImages[imageName]) {
-                story.images[imageName] = sessionImages[imageName];
+        // Iterate through sessionImages to save all generated/uploaded images
+        // sessionImages now contains both user-uploaded (by filename) and AI-generated (by uniqueId) Base64 data.
+        for (const imageName in sessionImages) {
+            if (sessionImages.hasOwnProperty(imageName)) {
+                story.images[imageName] = sessionImages[imageName]; // Save the Base64 data
             }
+        }
+        
+        // Save AI image metadata from the manager to ensure persistence
+        const aiMetadata = aiManager.getMetadata();
+        if (Object.keys(aiMetadata).length > 0) {
+            story.aiImageMetadata = aiMetadata;
         }
 
         const savedStories = storyManager.saveUserStory(story);
