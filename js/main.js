@@ -54,6 +54,8 @@ let pressTimer = null;
 let isLongPress = false;
 let popupWasShown = false; // Add a new flag to track if the popup was actually displayed
 let activeWordElement = null; // Keep track of the element being pressed
+let touchStartX = 0;
+let touchStartY = 0;
 const LONG_PRESS_DURATION = 400; // 400ms for a long press
 let isCreatorMode = false;
 let currentlySpeakingElement = null; // Tracks the element currently being spoken
@@ -162,7 +164,12 @@ function setupEventListeners() {
 
     // Press and hold logic for syllable pop-up
     dom.storyDisplay.addEventListener('mousedown', handlePressStart);
-    dom.storyDisplay.addEventListener('touchstart', handlePressStart, { passive: false });
+    dom.storyDisplay.addEventListener('touchstart', handlePressStart, { passive: true });
+    dom.storyDisplay.addEventListener('touchmove', handleTouchMove, { passive: true });
+    dom.storyDisplay.addEventListener('contextmenu', (e) => {
+        // Prevent the system context menu on speakable words to allow the custom long-press syllable popup
+        if (e.target.closest('.speakable-word')) e.preventDefault();
+    });
 
     // Add listeners to the window to catch the end of a press anywhere
     window.addEventListener('mouseup', handlePressEnd);
@@ -905,8 +912,11 @@ function handlePressStart(event) {
     activeWordElement = event.target.closest('.speakable-word');
     if (!activeWordElement) return;
 
-    // Prevent default behavior like text selection on mobile
-    event.preventDefault();
+    // Store starting coordinates for touch events to differentiate between a tap and a scroll
+    if (event.type === 'touchstart') {
+        touchStartX = event.touches[0].clientX;
+        touchStartY = event.touches[0].clientY;
+    }
 
     isLongPress = false; // Reset flag
     popupWasShown = false; // Reset this flag on every new press
@@ -915,6 +925,27 @@ function handlePressStart(event) {
         const originalWord = activeWordElement.textContent;
         showSyllablePopup(originalWord, activeWordElement);
     }, LONG_PRESS_DURATION);
+}
+
+/**
+ * Handles touch movement to detect scrolling.
+ * If the finger moves more than a small threshold, we assume the user is scrolling
+ * and cancel the tap/long-press timers.
+ * @param {TouchEvent} event 
+ */
+function handleTouchMove(event) {
+    if (!pressTimer || !activeWordElement) return;
+
+    const touch = event.touches[0];
+    const deltaX = Math.abs(touch.clientX - touchStartX);
+    const deltaY = Math.abs(touch.clientY - touchStartY);
+
+    // Threshold of 10 pixels to distinguish a tap from a scroll/swipe
+    if (deltaX > 10 || deltaY > 10) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+        activeWordElement = null;
+    }
 }
 
 /**
