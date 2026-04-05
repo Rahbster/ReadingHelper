@@ -483,9 +483,19 @@ function renderStory() {
                     // Only show technical error and retry button if in Creator Mode. 
                     // For the reader, show a generic message or nothing.
                     const retryBtn = isCreatorMode ? `<button class="retry-image-btn" data-filename="${fileName}">Retry</button>` : '';
-                    const errorText = isCreatorMode ? `Failed: ${metadata.errorMessage || 'Unknown error'}` : 'The AI illustrator is taking a short break.';
                     
-                    return `<div id="${fileName}" class="ai-prompt-placeholder failed" title="${metadata.errorMessage || 'Unknown error'}"><span>${isCreatorMode ? '❌ ' : '🎨 '}${errorText}</span>${retryBtn}</div>`;
+                    let errorText = 'The AI illustrator is taking a short break.';
+                    if (metadata.errorCode === 429) {
+                        errorText = "The AI artist is taking a break! Check back in a few minutes.";
+                    } else if (metadata.errorCode === 403) {
+                        errorText = "The AI couldn't quite see that picture. Let's try another word!";
+                    } else if (isCreatorMode) {
+                        errorText = `Failed: ${metadata.errorMessage || 'Unknown error'}`;
+                    }
+
+                    const errorIcon = metadata.errorCode === 403 ? '🎨 ' : (isCreatorMode ? '❌ ' : '🎨 ');
+                    
+                    return `<div id="${fileName}" class="ai-prompt-placeholder failed" title="${metadata.errorMessage || 'Unknown error'}"><span>${errorIcon}${errorText}</span>${retryBtn}</div>`;
                 } else { // pending or unknown
                     // Only show "Generate Now" button if in Creator Mode.
                     const generateBtn = isCreatorMode ? `<button class="retry-image-btn" data-filename="${fileName}">Generate Now</button>` : '';

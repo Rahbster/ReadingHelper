@@ -46,7 +46,8 @@ export async function testGeminiConnection(apiKey, statusEl) {
             const availableModels = data.models?.map(m => m.name.replace('models/', '')) || [];
             console.log('[AI-GEN] Available Models:', availableModels);
             
-            // Detect the best available models from your specific list
+            // Detect the best available models from your specific list (Updated for March 2026)
+            const hasFlash25Lite = availableModels.includes('gemini-2.5-flash-lite');
             const hasFlash25 = availableModels.includes('gemini-2.5-flash');
             const hasFlash25Image = availableModels.includes('gemini-2.5-flash-image');
             const hasFlash20 = availableModels.includes('gemini-2.0-flash') || availableModels.includes('gemini-2.0-flash-001') || availableModels.includes('gemini-2.0-flash-exp');
@@ -66,23 +67,30 @@ export async function testGeminiConnection(apiKey, statusEl) {
             else preferredTextModel = availableModels.includes('gemini-1.5-flash') ? 'gemini-1.5-flash' : 'gemini-flash-latest'; // Fallback to 1.5 or latest if nothing else
             
             // For images, we need a model that supports the IMAGE modality and has active quota.
-            // Prioritize Imagen models first, as they are dedicated image generators.
-            if (hasImagen4Fast) {
+            // March 2026 Update: Prioritize standard Flash 2.0/Latest models. 
+            // Specialized "-image" and "-lite" models are proving to be gated (Limit 0) or text-only for free tiers.
+            if (hasFlash20) {
+                preferredImageModel = availableModels.includes('gemini-2.0-flash') ? 'gemini-2.0-flash' : (availableModels.includes('gemini-2.0-flash-001') ? 'gemini-2.0-flash-001' : 'gemini-2.0-flash-exp');
+            } else if (hasFlashLatest) {
+                preferredImageModel = 'gemini-flash-latest';
+            } else if (hasFlash25) {
+                preferredImageModel = 'gemini-2.5-flash';
+            } else if (hasFlash25Image) {
+                preferredImageModel = 'gemini-2.5-flash-image';
+            } else if (hasFlash31Image) {
+                preferredImageModel = 'gemini-3.1-flash-image-preview';
+            } else if (hasFlash30Image) {
+                preferredImageModel = 'gemini-3-pro-image-preview';
+            } else if (hasFlash25Lite) {
+                preferredImageModel = 'gemini-2.5-flash-lite';
+            } else if (hasFlash20Lite) {
+                preferredImageModel = 'gemini-2.0-flash-lite';
+            } else if (hasImagen4Fast) {
                 preferredImageModel = 'imagen-4.0-fast-generate-001';
             } else if (hasImagen4Ultra) {
                 preferredImageModel = 'imagen-4.0-ultra-generate-001';
             } else if (hasImagen4) {
                 preferredImageModel = 'imagen-4.0-generate-001';
-            } else if (hasFlash20) {
-                preferredImageModel = availableModels.includes('gemini-2.0-flash') ? 'gemini-2.0-flash' : (availableModels.includes('gemini-2.0-flash-001') ? 'gemini-2.0-flash-001' : 'gemini-2.0-flash-exp');
-            } else if (hasFlash20Lite) {
-                preferredImageModel = 'gemini-2.0-flash-lite';
-            } else if (hasFlash30Image) { // Fallback to Gemini image previews if Imagen not available
-                preferredImageModel = 'gemini-3-pro-image-preview';
-            } else if (hasFlash31Image) {
-                preferredImageModel = 'gemini-3.1-flash-image-preview';
-            } else if (hasFlash25Image) {
-                preferredImageModel = 'gemini-2.5-flash-image';
             } else if (hasProLatest) {
                 preferredImageModel = 'gemini-pro-latest';
             } else {
@@ -218,65 +226,105 @@ async function generateAiImage(fileName, sessionImages, localImageUrls) {
     
     // Sanitize prompt: Certain words like "Cockapoo" often trigger false-positive 403 safety blocks.
     let safePrompt = metadata.prompt
-        .replace(/cockapoo/gi, 'curly-haired dog')
-        .replace(/basenji/gi, 'small short-haired dog');
+        .replace(/cockapoo/gi, "curly-haired dog")
+        .replace(/basenji/gi, "small short-haired dog");
+
+    const model = preferredImageModel;
+    const isImagen = model.includes('imagen-');
+
+    // Imagen models perform better with shorter prompts (under 200 chars)
+    if (isImagen && safePrompt.length > 200) {
+        safePrompt = safePrompt.substring(0, 197) + "...";
+    }
+
+    metadata.status = 'generating';
+    renderStoryCallback();
 
     try {
-        metadata.status = 'generating';
-        renderStoryCallback();
+        const method = isImagen ? 'predict' : 'generateContent';
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${method}?key=${apiKey}`;
 
-        // Using the detected preferred model. v1beta is required for multimodal IMAGE output.
-        // Note: Even for Imagen models, the :generateContent endpoint expects the "contents" schema.
-        const requestBody = JSON.stringify({
-            contents: [{ 
-                parts: [{ text: `Generate a high-quality 1024x1024 storybook style digital illustration of the following scene: ${safePrompt}. Output ONLY the image data.` }] 
-            }],
-            generationConfig: { 
-                responseModalities: ["IMAGE"],
-                candidateCount: 1 
-            }
-        });
+        let body;
+        if (isImagen) {
+            // Schema for Imagen 4.0 Models
+            body = {
+                instances: [{
+                    prompt: `Children's storybook illustration: ${safePrompt}`
+                }],
+                parameters: {
+                    sampleCount: 1,
+                    aspectRatio: "1:1",
+                    personGeneration: "allow_adult"
+                }
+            };
+        } else {
+            // Schema for Gemini 2.5/3.0 Multimodal Models
+            body = {
+                contents: [{
+                    parts: [{ text: `Generate a high-quality storybook illustration: ${safePrompt}` }]
+                }],
+                generationConfig: {
+                    responseModalities: ["IMAGE"]
+                }
+            };
+        }
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${preferredImageModel}:generateContent?key=${apiKey}`, { // Keep generateContent for now
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: requestBody
+            body: JSON.stringify(body)
         });
         
         const data = await response.json();
         console.log(`[AI-GEN] API Response Status for ${fileName}:`, response.status);
 
-        // Debugging: If 200 but no image, check if the model returned text or a safety reason instead.
-        const textResponse = data.candidates?.[0]?.content?.parts?.find(p => p.text)?.text;
-        const finishReason = data.candidates?.[0]?.finishReason;
-
-        if (finishReason === 'SAFETY') throw new Error("Safety filters blocked the generation of this specific image.");
-        if (textResponse && !data.candidates?.[0]?.content?.parts?.find(p => p.inlineData)) {
-            console.warn(`[AI-GEN] Model ${preferredImageModel} returned text instead of image: "${textResponse}"`);
-            throw new Error("Model provided a text description but did not generate the actual image.");
+        if (!response.ok) {
+            if (response.status === 429) {
+                const isGated = JSON.stringify(data).includes('limit: 0');
+                metadata.errorCode = 429;
+                metadata.errorMessage = isGated ? "Model gated (Limit 0). Try testing your API key to switch to a standard Flash model." : "Daily limit reached.";
+                throw new Error(metadata.errorMessage);
+            }
+            if (response.status === 400 && (JSON.stringify(data).includes('text output') || JSON.stringify(data).includes('response modalities'))) {
+                metadata.errorMessage = "Google modality restricted. Attempting fallback...";
+                throw new Error(metadata.errorMessage);
+            }
+            if (response.status === 403) {
+                metadata.errorCode = 403;
+                throw new Error("Safety filters blocked this image.");
+            }
+            if (response.status === 400 && JSON.stringify(data).includes('paid plans')) {
+                metadata.errorMessage = "Imagen requires a paid plan. Attempting fallback...";
+                throw new Error(metadata.errorMessage);
+            }
+            if (response.status === 404) throw new Error(`Model ${model} not found or unsupported modality.`);
+            throw new Error(data.error?.message || `API Error ${response.status}`);
         }
 
-        const base64Data = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+        // Extraction logic (varies by model type)
+        let base64Data;
+        if (isImagen) {
+            // Imagen returns predictions[0].bytesBase64Encoded
+            base64Data = data.predictions?.[0]?.bytesBase64Encoded;
+        } else {
+            const finishReason = data.candidates?.[0]?.finishReason;
+            if (finishReason === 'SAFETY') {
+                metadata.errorCode = 403;
+                throw new Error("Safety filters blocked the generation of this specific image.");
+            }
+
+            base64Data = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+
+            if (!base64Data) {
+                const textResponse = data.candidates?.[0]?.content?.parts?.find(p => p.text)?.text;
+                if (textResponse) {
+                    console.warn(`[AI-GEN] Model ${model} returned text instead of image: "${textResponse}"`);
+                    throw new Error("Model provided a text description but did not generate the actual image.");
+                }
+            }
+        }
+
         if (!base64Data) throw new Error("No image data returned.");
-
-        if (response.status === 403) {
-            throw new Error("Gemini Safety Filter blocked this image.");
-        }
-        if (response.status === 404) {
-            throw new Error(`Model ${preferredImageModel} not found or doesn't support image modality.`);
-        }
-        if (response.status === 429) {
-            // Log the full error to see if it's "RATE_LIMIT_EXCEEDED" or "DAILY_QUOTA_EXCEEDED"
-            console.error('[AI-GEN] Detailed Quota Error:', JSON.stringify(data.error, null, 2));
-            
-            const reason = data.error?.status || 'UNKNOWN_LIMIT';
-            const retryInfo = data.error?.details?.find(d => d['@type']?.includes('RetryInfo'));
-            const delay = retryInfo?.retryDelay || "60s";
-            
-            metadata.errorCode = 429;
-            throw new Error(`Quota exceeded (${reason}). Wait ${delay}.`);
-        }
-        if (!response.ok) throw new Error(data.error?.message || 'API Error');
 
         const dataUrl = `data:image/png;base64,${base64Data}`;
         sessionImages[fileName] = dataUrl;
@@ -285,10 +333,34 @@ async function generateAiImage(fileName, sessionImages, localImageUrls) {
         console.log(`[AI-GEN] Successfully generated image for ${fileName}`);
         renderStoryCallback();
     } catch (error) {
-        console.error(`[AI-GEN] Failed generating ${fileName}:`, error.message);
-        metadata.status = 'failed';
-        metadata.errorMessage = error.message;
-        renderStoryCallback();
+        console.warn(`[AI-GEN] Google generation failed for ${fileName}, trying Pollinations fallback. Error: ${error.message}`);
+        
+        try {
+            // Fallback to pollinations.ai
+            // We use no-referrer to bypass 403 Forbidden errors on GitHub Pages
+            const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent('childrens book illustration ' + safePrompt)}?width=1024&height=1024&nologo=true&seed=${Date.now()}`;
+            
+            const pollRes = await fetch(pollinationsUrl, { referrerPolicy: "no-referrer" });
+            if (!pollRes.ok) throw new Error(`Pollinations failed with status ${pollRes.status}`);
+            
+            const blob = await pollRes.blob();
+            const base64Data = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+            });
+
+            sessionImages[fileName] = base64Data;
+            localImageUrls[fileName] = base64Data;
+            metadata.status = 'success';
+            console.log(`[AI-GEN] Successfully generated image for ${fileName} via Pollinations`);
+            renderStoryCallback();
+        } catch (pollError) {
+            console.error(`[AI-GEN] Both Google and Pollinations failed for ${fileName}:`, pollError.message);
+            metadata.status = 'failed';
+            metadata.errorMessage = pollError.message;
+            renderStoryCallback();
+        }
     }
 }
 
@@ -311,8 +383,8 @@ export async function processQueue(sessionImages, localImageUrls) {
         const metadata = aiImageMetadata[fileName];
         if (metadata.status === 'success') {
             imageGenerationQueue.shift(); // Remove only on success
-            // Respect the 15 RPM limit by waiting ~8s between generations
-            await new Promise(r => setTimeout(r, 8000)); 
+            // Respect the 2 IPM (Images Per Minute) free limit by waiting 35s
+            await new Promise(r => setTimeout(r, 35000)); 
         } else if (metadata.errorCode === 429) {
             // Rate limit hit. Stop the queue for now and keep the item for retry.
             console.warn(`[AI-GEN] Queue paused due to usage limits.`);
