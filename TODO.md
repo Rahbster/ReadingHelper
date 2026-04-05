@@ -16,12 +16,15 @@
 
 ## ❌ What Needs Work
 
-### AI Image Generation (Gemini 2.5 Flash Image)
-**✅ Native Integration**: Pivoted back to Google using `gemini-2.5-flash-image` for high-quality, free-tier image generation.
-- **Refinement**: Using `responseModalities: ["IMAGE"]` to receive base64 data directly from the Gemini API.
-- **Architecture**: Maintained the fetch-to-base64 pipeline to ensure images remain saved in the local story JSON.
-**✅ Cost & Quota**: Utilizing the ~500 images per day free quota provided by Gemini Flash.
-**✅ Quota Management**: Switched to stable `gemini-2.5-flash` to avoid retired endpoints and restrictive daily limits. Added dynamic `retryDelay` parsing for 429 errors and 404 version guards.
+### AI Image Generation (Multimodal Image Modality)
+**Status**: Troubleshooting persistent API errors across various Gemini and Imagen models in the experimental preview tier.
+- **Quota Obstacles**: Most preview models (e.g., `gemini-2.5-flash-image`, `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview`) are returning `RESOURCE_EXHAUSTED` (429) with a `limit: 0` error, indicating they are currently gated for the project/region.
+- **Modality Support**: Standard models like `gemini-2.0-flash` and `gemini-flash-latest` are successfully connecting (200 OK) but either return text descriptions instead of binary data or fail with a 400 error stating the `IMAGE` modality is not supported.
+- **Schema Mismatch**: Attempted integration with `imagen-4.0-fast-generate-001`, but discovered the `:generateContent` endpoint is incompatible with the Vertex AI `instances`/`parameters` JSON structure.
+- **To Do**: 
+    - Implement a more robust "Model Discovery" phase that checks for both availability and modality support.
+    - Investigate if the Vertex AI `predict` endpoint can be used with the existing API key as a fallback for the Imagen 4 models.
+    - Refine the user-facing "failed" state to distinguish between "Daily Limit Reached" and "Technical Error."
 
 ### UI & Synchronization
 - **Live Preview**: Ensure the `storyDisplay` updates immediately when text is changed in the `storyInput` or when AI tags are inserted.

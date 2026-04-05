@@ -129,6 +129,7 @@ async function init() {
     await loadStoryLibrary();
     setupEventListeners();
     renderDashboard();
+    performStorageMaintenance();
 }
 
 /**
@@ -255,6 +256,21 @@ function openChatModal() {
 
 function closeChatModal() {
     dom.chatModal.classList.add('hidden');
+}
+
+/**
+ * Maintenance utility to clean up unused image assets from IndexedDB.
+ */
+async function performStorageMaintenance() {
+    console.log('Starting storage maintenance...');
+    try {
+        const deletedCount = await storyManager.cleanupOrphanedImages();
+        if (deletedCount > 0) {
+            console.log(`Storage maintenance complete. Cleaned up ${deletedCount} orphaned images.`);
+        }
+    } catch (error) {
+        console.error('Storage maintenance failed:', error);
+    }
 }
 
 /**
@@ -401,7 +417,7 @@ async function illustrateStoryWithGemini() {
     await aiManager.illustrateStory(dom.storyInput.value.trim(), (text) => {
         dom.storyInput.value = text;
         renderStory();
-    });
+    }, sessionImages, localImageUrls);
 }
 
 /**
@@ -411,7 +427,7 @@ async function insertMagicImageAtCursor() {
     await aiManager.insertMagicImage(dom.storyInput.value, dom.storyInput.selectionStart, dom.storyInput.selectionEnd, (text) => {
         dom.storyInput.value = text;
         renderStory();
-    });
+    }, sessionImages, localImageUrls);
 }
 
 /**
@@ -749,13 +765,15 @@ async function handleStoryListClick(event) {
         shareStory(storyId, storyTitle);
     } else if (target.closest('[data-local-story-id]')) {
         const storyId = target.closest('[data-local-story-id]').dataset.localStoryId;
-        loadUserStory(storyId);
+        await loadUserStory(storyId);
     } else if (target.closest('[data-path]')) {
         const storyItem = target.closest('.story-item');
         const path = storyItem.dataset.path;
         currentStoryPath = path; // Store the base path for the loaded story
 
         localImageUrls = {}; // Clear local images when loading a built-in story
+        sessionImages = {}; // Clear session images
+
         // CRITICAL: Clear previous guides from memory before fetching new ones.
         currentStoryId = null;
         currentPhonetics = {};
@@ -781,6 +799,36 @@ async function handleStoryListClick(event) {
             currentPronunciations = pronunciationsData;
 
             dom.storyInput.value = storyText;
+
+            // Ingest images to make the built-in story portable for "Saving"
+            const imageRegex = /\[IMAGE:\s*(.*?)\s*\]/g;
+            let match;
+            const matches = [...storyText.matchAll(imageRegex)];
+            for (const match of matches) {
+                const imageIdentifier = match[1].trim();
+                const isFilePath = !imageIdentifier.startsWith('ai-gen-') && /\.(jpg|jpeg|png|gif|webp)$/i.test(imageIdentifier);
+                
+                if (isFilePath) {
+                    const imageName = imageIdentifier.split('/').pop();
+                    const fullImagePath = `${path}${imageIdentifier}`.replace(/ /g, '%20');
+                    try {
+                        const imgRes = await fetch(fullImagePath);
+                        if (imgRes.ok) {
+                            const blob = await imgRes.blob();
+                            const base64 = await new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result);
+                                reader.readAsDataURL(blob);
+                            });
+                            sessionImages[imageName] = base64;
+                            localImageUrls[imageName] = base64;
+                        }
+                    } catch (e) {
+                        console.warn(`[INGEST] Failed to pre-load built-in image: ${fullImagePath}`, e);
+                    }
+                }
+            }
+
             // Also populate the creator editors so the user can see the loaded guides.
             renderPhoneticsEditor(currentPhonetics);
             renderPronunciationEditor(currentPronunciations);
@@ -896,7 +944,7 @@ async function handleStoryTransfer(storyPackage) {
         }
 
         // Save using the manager
-        storyManager.saveUserStory(story);
+        await storyManager.saveUserStory(story);
 
         toastManager.show(`Received story: "${storyTitle}". Saved to My Stories.`, 'success', 5000);
         
@@ -915,7 +963,7 @@ async function handleStoryTransfer(storyPackage) {
  * @param {string} storyTitle - The title of the story.
  */
 async function shareStory(storyId, storyTitle) {    
-    const story = storyManager.getUserStoryById(storyId);
+    const story = await storyManager.getUserStoryById(storyId);
     if (!story) {
         alert('Could not find the story to share.');
         return;
@@ -956,8 +1004,8 @@ async function shareStory(storyId, storyTitle) {
  * Loads a user story from localStorage.
  * @param {string} id - The ID of the story to load.
  */
-function loadUserStory(id) {
-    const story = storyManager.getUserStoryById(id);
+async function loadUserStory(id) {
+    const story = await storyManager.getUserStoryById(id);
     if (!story) return;
 
     currentStoryId = story.id;
@@ -980,6 +1028,8 @@ function loadUserStory(id) {
     }
     if (story.aiImageMetadata) {
         aiManager.setMetadata(story.aiImageMetadata);
+        // Resume any pending or failed AI generations
+        aiManager.resumeQueue(sessionImages, localImageUrls);
     }
 
     closeStoryModal();
@@ -1282,7 +1332,7 @@ async function saveUserStory() {
         if (currentStoryId) {
             story.id = currentStoryId;
             // Preserve existing images if not overwritten
-            const existing = storyManager.getUserStoryById(currentStoryId);
+            const existing = await storyManager.getUserStoryById(currentStoryId);
             if (existing && existing.images) {
                 story.images = { ...existing.images };
             }
@@ -1305,14 +1355,12 @@ async function saveUserStory() {
             story.aiImageMetadata = aiMetadata;
         }
 
-        const savedStories = storyManager.saveUserStory(story);
+        const savedStory = await storyManager.saveUserStory(story);
         // Update current ID if it was a new story
-        const savedStory = savedStories.find(s => s.title === title && s.content === storyText);
-        if (savedStory) currentStoryId = savedStory.id;
+        if (savedStory?.id) currentStoryId = savedStory.id;
 
         alert(`Story "${title}" saved successfully!`);
         await loadStoryLibrary(); // Refresh list
-
     } catch (error) {
         console.error('Error saving story:', error);
         alert('Could not save the story.');
@@ -1329,7 +1377,7 @@ async function deleteMyStory(storyId, storyTitle) {
         return;
     }
 
-    storyManager.deleteUserStory(storyId);
+    await storyManager.deleteUserStory(storyId);
     await loadStoryLibrary();
 }
 
