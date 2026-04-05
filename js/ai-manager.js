@@ -38,7 +38,11 @@ export async function testGeminiConnection(apiKey, statusEl) {
     }
 
     try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+            mode: 'cors',
+            referrerPolicy: 'no-referrer',
+            cache: 'no-store'
+        });
         const data = await response.json();
 
         if (response.ok) {
@@ -133,11 +137,22 @@ export async function illustrateStory(storyText, updateInputCallback, sessionIma
         // and just insert placeholders.
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${preferredTextModel}:generateContent?key=${apiKey}`, {
             method: 'POST',
+            mode: 'cors',
+            referrerPolicy: 'no-referrer',
+            cache: 'no-store',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 contents: [{
                     parts: [{
-                        text: `Read the following story and rewrite it, inserting exactly three [IMAGE: brief description] tags at significant scene breaks. Output ONLY the rewritten story text. Story: ${storyText}`
+                        text: `You are a professional children's book illustrator and visual director. 
+                        Read the following story and rewrite it, inserting exactly three [IMAGE: description] tags at significant scene breaks. 
+                        
+                        The description inside each tag must be a detailed visual prompt for an image generator. 
+                        Define a consistent artistic style (e.g., 'soft watercolor with pencil outlines') and apply it to every description. 
+                        Describe character appearances, clothing, and environment in detail to ensure visual continuity across the three scenes.
+                        
+                        Output ONLY the rewritten story text.
+                        Story: ${storyText}`
                     }]
                 }]
             })
@@ -185,20 +200,66 @@ export async function illustrateStory(storyText, updateInputCallback, sessionIma
 /**
  * Inserts a single AI image tag based on selection.
  */
-export async function insertMagicImage(storyText, start, end, updateInputCallback, sessionImages, localImageUrls) {
+export async function insertMagicImage(storyText, start, end, hiddenDetails, updateInputCallback, sessionImages, localImageUrls) {
     const selectedText = storyText.substring(start, end).trim();
     if (!selectedText) {
         toastManager.show('Please highlight the scene you want to illustrate.', 'info');
         return;
     }
 
-    // Optimization: Skip the extra text-generation API call and use the selected text 
-    // directly as the image prompt. This saves quota and is much faster.
-    const prompt = selectedText.length > 100 
-        ? selectedText.substring(0, 97) + "..." 
-        : selectedText;
+    const apiKey = localStorage.getItem('google_ai_api_key');
+    if (!apiKey) {
+        toastManager.show('Please enter your Google AI API Key in Settings.', 'error', 6000);
+        openNavCallback();
+        return;
+    }
 
-    console.log(`[AI-GEN] Magic illustration requested for: "${prompt}"`);
+    toastManager.show('AI is imagining the scene...', 'info', 3000);
+
+    let prompt = selectedText;
+
+    // Collect context for visual consistency
+    const previousPrompts = Object.values(aiImageMetadata)
+        .map(m => m.prompt)
+        .slice(-3) // Take the last few prompts for consistency context
+        .join('; ');
+
+    try {
+        // Enhanced prompt refinement with full story context and hidden details
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${preferredTextModel}:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            mode: 'cors',
+            referrerPolicy: 'no-referrer',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{ 
+                        text: `You are a visual director for a children's book. 
+                        Full Story Context: ${storyText}
+                        Specific Scene to illustrate: ${selectedText}
+                        Hidden Visual Details to include: ${hiddenDetails || 'None'}
+                        Consistency Reference (Previous descriptions): ${previousPrompts || 'None'}
+
+                        Task: Create a highly descriptive, single-paragraph visual prompt for an image generator. 
+                        Focus on character appearance (ensure characters look consistent with previous scenes), 
+                        lighting, and composition. 
+                        If 'Hidden Visual Details' are provided, ensure they are woven naturally into the scene 
+                        (e.g., if a character has a secret item in their pocket, describe the subtle bulge or the way they protect that pocket).
+                        Output ONLY the refined prompt text without quotes.` 
+                    }]
+                }]
+            })
+        });
+        const data = await response.json();
+        if (response.ok) {
+            prompt = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || selectedText;
+        }
+    } catch (e) {
+        console.warn("[AI-GEN] Prompt refinement failed, using raw selection.");
+    }
+
+    console.log(`[AI-GEN] Magic illustration prompt: "${prompt}"`);
 
     const fileName = `ai-gen-${Date.now()}-${Math.floor(Math.random() * 1000)}.png`;
     aiImageMetadata[fileName] = { prompt: prompt, status: 'pending' };
@@ -224,17 +285,21 @@ async function generateAiImage(fileName, sessionImages, localImageUrls) {
 
     console.log(`[AI-GEN] Starting image generation for: "${metadata.prompt}" (File: ${fileName})`);
     
-    // Sanitize prompt: Certain words like "Cockapoo" often trigger false-positive 403 safety blocks.
+    // Sanitize prompt: remove characters that break URL paths or trigger server errors (like trailing dots)
     let safePrompt = metadata.prompt
         .replace(/cockapoo/gi, "curly-haired dog")
-        .replace(/basenji/gi, "small short-haired dog");
+        .replace(/basenji/gi, "small short-haired dog")
+        .replace(/[^a-zA-Z0-9\s,.]/g, ' ') // Allow commas and periods to help the image model understand structure
+        .replace(/\s+/g, ' ')   // Collapse multiple spaces
+        .trim();
 
     const model = preferredImageModel;
     const isImagen = model.includes('imagen-');
 
-    // Imagen models perform better with shorter prompts (under 200 chars)
-    if (isImagen && safePrompt.length > 200) {
-        safePrompt = safePrompt.substring(0, 197) + "...";
+    // Increase allowed length significantly.
+    // Since we use POST requests, we can now send the full detailed description to Pollinations.
+    if (safePrompt.length > 1000) {
+        safePrompt = safePrompt.substring(0, 997).trim() + "...";
     }
 
     metadata.status = 'generating';
@@ -271,6 +336,9 @@ async function generateAiImage(fileName, sessionImages, localImageUrls) {
 
         const response = await fetch(url, {
             method: 'POST',
+            mode: 'cors',
+            referrerPolicy: 'no-referrer',
+            cache: 'no-store',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
@@ -337,10 +405,22 @@ async function generateAiImage(fileName, sessionImages, localImageUrls) {
         
         try {
             // Fallback to pollinations.ai
-            // We use no-referrer to bypass 403 Forbidden errors on GitHub Pages
-            const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent('childrens book illustration ' + safePrompt)}?width=1024&height=1024&nologo=true&seed=${Date.now()}`;
-            
-            const pollRes = await fetch(pollinationsUrl, { referrerPolicy: "no-referrer" });
+            // We use a POST request with a JSON body instead of a GET request with a path-based prompt.
+            // This avoids 500 errors on localhost caused by long URL paths or security filters.
+            const pollRes = await fetch('https://image.pollinations.ai/', { 
+                method: 'POST',
+                mode: 'cors',
+                referrerPolicy: 'no-referrer',
+                cache: 'no-store',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    prompt: 'storybook illustration ' + safePrompt,
+                    width: 1024,
+                    height: 1024,
+                    nologo: true,
+                    seed: Date.now()
+                })
+            });
             if (!pollRes.ok) throw new Error(`Pollinations failed with status ${pollRes.status}`);
             
             const blob = await pollRes.blob();

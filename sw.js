@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reading-helper-cache-v2';
+const CACHE_NAME = 'reading-helper-cache-v3';
 // App Shell - the core files for the app's functionality
 const appShellFiles = [
     './',
@@ -78,15 +78,19 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+    // Only intercept GET requests from our own origin to avoid issues with external APIs
+    const url = new URL(event.request.url);
+    if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
+        return;
+    }
+
     event.respondWith(
-        caches.match(event.request)
-            .then((response) => {
-                // Cache hit - return response
-                if (response) {
-                    return response;
-                }
-                return fetch(event.request);
-            })
+        caches.match(event.request).then((response) => {
+            if (response) {
+                return response;
+            }
+            return fetch(event.request);
+        })
     );
 });
 

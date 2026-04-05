@@ -86,7 +86,7 @@ const chatManager = new ChatManager(peerAdapter, () => ({ name: localStorage.get
  * Unregisters service workers, clears caches, and all local storage to perform a full reset.
  */
 async function resetApplication() {
-    if (!confirm('Are you sure you want to perform a full reset? This will clear all cached data and word statistics.')) {
+    if (!confirm('Are you sure you want to perform a full reset? This will clear all cached data, word statistics, and AI metadata.')) {
         return;
     }
 
@@ -107,11 +107,42 @@ async function resetApplication() {
         }
         console.log('Clearing local storage...');
         localStorage.clear();
+        
+        // Force a reload that bypasses the browser cache entirely
         console.log('Reset complete. Reloading page.');
-        window.location.reload();
+        window.location.href = window.location.origin + window.location.pathname + '?reset=' + Date.now();
     } catch (error) {
         console.error('Error during application reset:', error);
         alert('An error occurred during the reset process. Please check the console for details.');
+    }
+}
+
+/**
+ * Registers the service worker and handles updates.
+ */
+async function setupServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+
+    try {
+        const swUrl = new URL('sw.js', window.location.href).href;
+        const registration = await navigator.serviceWorker.register(swUrl);
+
+        registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    // Notify user of update via Toast
+                    toastManager.show('Update available! Refresh to see changes.', 'info', 0);
+                }
+            });
+        });
+
+        // Automatically reload when a new service worker takes control
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            window.location.reload();
+        });
+    } catch (error) {
+        console.error('Service Worker registration failed:', error);
     }
 }
 
@@ -121,6 +152,7 @@ async function resetApplication() {
 async function init() {
     initTheme();
     loadWordStats();
+    setupServiceWorker();
     aiManager.init({
         toastManager,
         renderStory,
@@ -424,7 +456,18 @@ async function illustrateStoryWithGemini() {
  * Uses Google Gemini to generate a single "Magic Image" based on selected text
  */
 async function insertMagicImageAtCursor() {
-    await aiManager.insertMagicImage(dom.storyInput.value, dom.storyInput.selectionStart, dom.storyInput.selectionEnd, (text) => {
+    const start = dom.storyInput.selectionStart;
+    const end = dom.storyInput.selectionEnd;
+    const selectedText = dom.storyInput.value.substring(start, end).trim();
+    
+    if (!selectedText) {
+        aiManager.insertMagicImage(dom.storyInput.value, 0, 0, "", null); 
+        return;
+    }
+
+    const hiddenDetails = prompt("Enter any 'behind the scenes' visual details (e.g., 'the wizard has a hidden key bulge in his pocket'):") || "";
+    
+    await aiManager.insertMagicImage(dom.storyInput.value, start, end, hiddenDetails, (text) => {
         dom.storyInput.value = text;
         renderStory();
     }, sessionImages, localImageUrls);
