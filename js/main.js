@@ -121,7 +121,7 @@ async function resetApplication() {
  * Registers the service worker and handles updates.
  */
 async function setupServiceWorker() {
-    if (!('serviceWorker' in navigator)) return;
+    if (!navigator.serviceWorker) return;
 
     try {
         const swUrl = new URL('sw.js', window.location.href).href;
@@ -460,13 +460,8 @@ async function insertMagicImageAtCursor() {
     const end = dom.storyInput.selectionEnd;
     const selectedText = dom.storyInput.value.substring(start, end).trim();
     
-    if (!selectedText) {
-        aiManager.insertMagicImage(dom.storyInput.value, 0, 0, "", null); 
-        return;
-    }
-
-    const hiddenDetails = prompt("Enter any 'behind the scenes' visual details (e.g., 'the wizard has a hidden key bulge in his pocket'):") || "";
-    
+    const hiddenDetails = prompt("Art style or character details (e.g., 'Studio Ghibli style, Goldilocks wears a red ribbon'):") || "";
+        
     await aiManager.insertMagicImage(dom.storyInput.value, start, end, hiddenDetails, (text) => {
         dom.storyInput.value = text;
         renderStory();
@@ -497,7 +492,8 @@ function renderStory() {
             if (isFilePath) {
                 const imageName = imageIdentifier.split('/').pop();
                 const fullImagePath = localImageUrls[imageName] || `${currentStoryPath}${imageIdentifier}`.replace(/ /g, '%20');
-                return `<img src="${fullImagePath}" alt="Story illustration" class="story-image">`;
+                const titleAttr = isCreatorMode ? `title="${imageIdentifier}"` : '';
+                return `<img src="${fullImagePath}" alt="Story illustration" class="story-image" ${titleAttr}>`;
             } else if (isAiGenerated) {
                 const fileName = imageIdentifier;
                 let metadata = aiMetadata[fileName];
@@ -519,7 +515,8 @@ function renderStory() {
                 }
 
                 if (metadata.status === 'success') {
-                    return `<img src="${localImageUrls[fileName]}" alt="${metadata.prompt}" class="story-image">`;
+                    const titleAttr = isCreatorMode ? `title="${metadata.prompt}"` : '';
+                    return `<img src="${localImageUrls[fileName]}" alt="${metadata.prompt}" class="story-image" ${titleAttr}>`;
                 } else if (metadata.status === 'generating') {
                     return `<div id="${fileName}" class="ai-prompt-placeholder generating" title="Drawing: ${metadata.prompt}"><div class="spinner"></div><span>Drawing: <i>${metadata.prompt}</i></span></div>`;
                 } else if (metadata.status === 'failed') {
