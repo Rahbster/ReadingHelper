@@ -4,6 +4,7 @@ import { ToastManager } from './ToastManager.js';
 import { ChatManager } from './ChatManager.js';
 import { showPeerConnectionModal } from './modals/peer_connection_modal.js';
 import * as aiManager from './ai-manager.js';
+import { UIManager } from './UIManager.js';
 
 const dom = {
     storyInput: document.getElementById('story-input'),
@@ -81,6 +82,7 @@ const peerAdapter = {
 };
 
 const chatManager = new ChatManager(peerAdapter, () => ({ name: localStorage.getItem('readinghelper_display_name') || 'Anonymous' }));
+export const uiManager = new UIManager(dom, chatManager, toastManager);
 
 /**
  * Unregisters service workers, clears caches, and all local storage to perform a full reset.
@@ -150,13 +152,13 @@ async function setupServiceWorker() {
  * Main initialization function.
  */
 async function init() {
-    initTheme();
+    uiManager.initTheme();
     loadWordStats();
     setupServiceWorker();
     aiManager.init({
         toastManager,
         renderStory,
-        openNav
+        openNav: () => uiManager.openNav()
     });
     await loadStoryLibrary();
     setupEventListeners();
@@ -170,8 +172,6 @@ async function init() {
 function setupEventListeners() {
     const listeners = [
         // Main Controls
-        { element: dom.chooseStoryBtn, event: 'click', handler: openStoryModal },
-        { element: dom.toggleDashboardBtn, event: 'click', handler: () => { toggleDashboard(); closeNav(); } },
         { element: dom.creatorModeBtn, event: 'click', handler: toggleCreatorMode },
 
         // Dashboard
@@ -179,8 +179,6 @@ function setupEventListeners() {
         { element: dom.resetAppBtn, event: 'click', handler: resetApplication },
 
         // Story Modal
-        { element: dom.storyModalXBtn, event: 'click', handler: closeStoryModal },
-        { element: dom.storyModal, event: 'click', handler: (e) => { if (e.target === dom.storyModal) closeStoryModal(); } },
         { element: dom.loadFromUrlBtn, event: 'click', handler: handleLoadFromUrl },
         { element: dom.connectBtn, event: 'click', handler: handleConnectClick },
         { element: dom.refreshStoryListBtn, event: 'click', handler: loadStoryLibrary },
@@ -196,19 +194,8 @@ function setupEventListeners() {
         { element: dom.pronunciationsEditor, event: 'click', handler: handlePronunciationEditorClick },
         { element: dom.saveStoryBtn, event: 'click', handler: saveUserStory },
 
-        // Sidenav
-        { element: dom.hamburgerBtn, event: 'click', handler: openNav },
-        { element: dom.closeSidenavBtn, event: 'click', handler: closeNav },
-        { element: dom.overlay, event: 'click', handler: closeNav },
-        { element: dom.themeToggle, event: 'click', handler: toggleTheme },
-        { element: dom.settingsNameInput, event: 'change', handler: updateDisplayName },
-        { element: dom.googleApiKeyInput, event: 'change', handler: updateGoogleApiKey },
+        // Sidenav / Settings
         { element: dom.testApiKeyBtn, event: 'click', handler: testGeminiConnection },
-        { element: dom.getApiKeyHelpBtn, event: 'click', handler: openApiKeyHelp },
-
-        // Chat
-        { element: dom.btnOpenChat, event: 'click', handler: openChatModal },
-        { element: dom.closeChatModalBtn, event: 'click', handler: closeChatModal },
     ];
 
     listeners.forEach(({ element, event, handler }) => {
@@ -237,58 +224,7 @@ function setupEventListeners() {
     window.addEventListener('touchend', handlePressEnd);
 }
 
-function openNav() {
-    dom.sidenav.style.width = "280px";
-    dom.overlay.style.display = "block";
-    // Populate settings name when opening nav
-    const name = localStorage.getItem('readinghelper_display_name') || '';
-    if (dom.settingsNameInput) {
-        dom.settingsNameInput.value = name;
-    }
-    // Populate API Key
-    const apiKey = localStorage.getItem('google_ai_api_key') || '';
-    if (dom.googleApiKeyInput) {
-        dom.googleApiKeyInput.value = apiKey;
-    }
-}
 
-function closeNav() {
-    dom.sidenav.style.width = "0";
-    dom.overlay.style.display = "none";
-}
-
-/**
- * Opens the Google AI Studio API key page and an instructions page in new tabs.
- */
-function openApiKeyHelp() {
-    window.open('instructions.html', '_blank');
-}
-
-function toggleTheme() {
-    const currentTheme = document.body.getAttribute('data-theme') || 'light';
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    document.body.setAttribute('data-theme', newTheme);
-    localStorage.setItem('theme', newTheme);
-    dom.themeToggle.textContent = newTheme === 'dark' ? '☀️' : '🌓';
-}
-
-function initTheme() {
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme) {
-        document.body.setAttribute('data-theme', savedTheme);
-        if (dom.themeToggle) dom.themeToggle.textContent = savedTheme === 'dark' ? '☀️' : '🌓';
-    }
-}
-
-function openChatModal() {
-    closeNav();
-    dom.chatModal.classList.remove('hidden');
-    chatManager.resetUnread();
-}
-
-function closeChatModal() {
-    dom.chatModal.classList.add('hidden');
-}
 
 /**
  * Maintenance utility to clean up unused image assets from IndexedDB.
@@ -309,7 +245,7 @@ async function performStorageMaintenance() {
  * Handles the main connect button click.
  */
 function handleConnectClick() {
-    closeNav();
+    uiManager.closeNav();
     if (isPeerConnected) {
         if (confirm('Disconnect from peer?')) {
             peerService.destroyPeer();
@@ -423,16 +359,7 @@ function addLocalStoriesToModal(stories) {
     contentArea.innerHTML = newStoriesHtml; // Use innerHTML to replace content on refresh
 }
 
-/**
- * Updates the Google AI API Key in local storage.
- * @param {Event} event 
- */
-function updateGoogleApiKey(event) {
-    const key = event.target.value.trim();
-    localStorage.setItem('google_ai_api_key', key);
-    if (dom.apiKeyStatus) dom.apiKeyStatus.textContent = ''; // Reset status icon
-    toastManager.show('Google AI API Key saved locally.', 'success');
-}
+
 
 /**
  * Tests the Google AI API key by making a simple request to the Gemini models endpoint.
@@ -707,17 +634,7 @@ function renderDashboard() {
     `).join('');
 }
 
-/**
- * Toggles the visibility of the reader and dashboard views.
- */
-function toggleDashboard() {
-    const isDashboardVisible = dom.dashboardView.classList.toggle('hidden');
-    dom.readerView.classList.toggle('hidden', !isDashboardVisible);
-    
-    // Update button text and visibility based on view
-    dom.toggleDashboardBtn.querySelector('span').textContent = isDashboardVisible ? 'Dashboard' : 'Back to Reader';
-    dom.chooseStoryBtn.classList.toggle('hidden', !isDashboardVisible);
-}
+
 
 /**
  * Clears all tracked word statistics from localStorage.
@@ -740,7 +657,7 @@ function toggleCreatorMode() {
         dom.creatorModeBtn.querySelector('span').textContent = 'Exit Creator Mode';
         // If dashboard is not hidden, switch back to reader view to show the creator
         if (!dom.dashboardView.classList.contains('hidden')) {
-            toggleDashboard();
+            uiManager.toggleDashboard();
         }
 
         dom.storyInput.addEventListener('input', handleStoryInputPreview);
@@ -754,30 +671,7 @@ function toggleCreatorMode() {
     }
 }
 
-/**
- * Opens the story selection modal.
- */
-function openStoryModal() {
-    dom.storyModal.classList.remove('hidden');
-}
 
-/**
- * Closes the story selection modal.
- */
-function closeStoryModal() {
-    dom.storyModal.classList.add('hidden');
-}
-
-/**
- * Updates the user's display name in local storage.
- * @param {Event} event 
- */
-function updateDisplayName(event) {
-    const name = event.target.value.trim();
-    if (name) {
-        localStorage.setItem('readinghelper_display_name', name);
-    }
-}
 
 
 /**
@@ -883,7 +777,7 @@ async function handleStoryListClick(event) {
             renderPhoneticsEditor(currentPhonetics);
             renderPronunciationEditor(currentPronunciations);
 
-            closeStoryModal();
+            uiManager.closeStoryModal();
             renderStory(); // Automatically load the story
         } catch (error) {
             console.error(`Failed to load story module from ${path}`, error);
@@ -1082,7 +976,7 @@ async function loadUserStory(id) {
         aiManager.resumeQueue(sessionImages, localImageUrls);
     }
 
-    closeStoryModal();
+    uiManager.closeStoryModal();
     renderStory();
 }
 

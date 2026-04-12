@@ -34,7 +34,9 @@ async function refinePrompt(fullStory, selectedText, hiddenDetails, styleGuide) 
                 
                 Task: Create a single-paragraph visual prompt for an image generator. 
                 Describe the scene visually in detail, focusing on composition, subjects, and lighting.
-                Include quality-enhancing keywords like "detailed, masterpiece, sharp focus, cinematic lighting".
+                
+                MANDATORY ART STYLE: Every prompt MUST fiercely enforce the following aesthetic: "Lush watercolor children's book illustration, whimsical, soft atmospheric lighting, highly detailed, vibrant, magical, Studio Ghibli inspired, masterpiece, 8k resolution."
+                
                 Ensure character appearances and settings are consistent with the story context and STYLE GUIDE.
                 If a STYLE GUIDE exists, prioritize its description of characters and art style to maintain continuity.
                 
@@ -93,9 +95,9 @@ export async function illustrateStory(storyText, updateInputCallback, sessionIma
                 Guidelines:
                 1. Keep the original story text exactly as is.
                 2. Insert a tag every few paragraphs.
-                3. Maintain character and setting consistency.
+                3. Maintain character and setting consistency throughout all descriptions.
                 4. Each visual description should be a detailed paragraph (under 1000 characters).
-                5. Include quality keywords: "detailed, masterpiece, sharp focus, cinematic lighting".
+                5. MANDATORY ART STYLE: Every description MUST include the following aesthetic phrasing: "Lush watercolor children's book illustration, whimsical, soft atmospheric lighting, highly detailed, vibrant, magical, Studio Ghibli inspired, masterpiece, 8k resolution."
                 
                 Output ONLY the rewritten story with tags.`
             }]
@@ -204,8 +206,27 @@ export async function testGeminiConnection(apiKey, statusEl) {
     } catch (e) { console.error("[AI-GEN] Gemini Connection Error:", e); if (statusEl) statusEl.textContent = '❌'; }
 }
 
+async function tryPollinationsGeneration(fileName, sessionImages, localImageUrls) {
+    const metadata = aiImageMetadata[fileName];
+    const encodedPrompt = encodeURIComponent(metadata.prompt);
+    const seed = Math.floor(Math.random() * 1000000);
+    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&nologo=true`;
+    
+    console.log(`[AI-GEN] Requesting Pollinations generation: ${url}`);
+
+    try {
+        sessionImages[fileName] = url;
+        localImageUrls[fileName] = url;
+        await new Promise(r => setTimeout(r, 2000));
+        metadata.status = 'success';
+    } catch (err) {
+        console.error(`[AI-GEN] Pollinations Generation failed:`, err);
+        metadata.status = 'failed';
+    }
+}
+
 /**
- * Simple, direct fetch from Pollinations.
+ * Generates an image using Pollinations.ai.
  */
 async function generateAiImage(fileName, sessionImages, localImageUrls) {
     const metadata = aiImageMetadata[fileName];
@@ -214,25 +235,9 @@ async function generateAiImage(fileName, sessionImages, localImageUrls) {
     metadata.status = 'generating';
     renderStoryCallback();
 
-    const encodedPrompt = encodeURIComponent(metadata.prompt);
-    const seed = Math.floor(Math.random() * 1000000);
-    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&nologo=true`;
-    
-    console.log(`[AI-GEN] Requesting generation: ${url}`);
+    await tryPollinationsGeneration(fileName, sessionImages, localImageUrls);
 
-    try {
-        sessionImages[fileName] = url;
-        localImageUrls[fileName] = url;
-
-        // Reverting to the simple warm-up delay that was working for the user previously
-        await new Promise(r => setTimeout(r, 2000));
-        metadata.status = 'success';
-    } catch (err) {
-        console.error(`[AI-GEN] Generation failed:`, err);
-        metadata.status = 'failed';
-    } finally {
-        renderStoryCallback();
-    }
+    renderStoryCallback();
 }
 
 /**

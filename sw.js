@@ -1,22 +1,27 @@
-const CACHE_NAME = 'reading-helper-cache-v3';
+const CACHE_NAME = 'reading-helper-cache-v6';
 // App Shell - the core files for the app's functionality
 const appShellFiles = [
     './',
     './index.html',
-    './css/style.css',
+    './manifest.json',
+    './stories.json',
+    './story-manager.js',
     './js/main.js',
     './js/ai-manager.js',
     './js/ToastManager.js',
-    './js/modals/peer_connection_modal.js',
     './js/ChatManager.js',
-    './css/peer_connection_modal.css',
+    './js/UIManager.js',
+    './js/storage-helper.js',
+    './js/peer-service.js',
+    './js/modals/peer_connection_modal.js',
+    './css/style.css',
     './css/sidenav.css',
     './css/chat.css',
-    './js/peer-service.js',
-    './manifest.json',
+    './css/peer_connection_modal.css',
     './icons/icon-192x192.png',
     './icons/icon-512x512.png',
-    './stories.json',
+    './icons/icon-tab.png',
+    './instructions.html'
 ];
 
 self.addEventListener('install', (event) => {
