@@ -8,6 +8,9 @@ This project was created to provide a personalized and interactive reading tool 
 
 ## ✨ Key Features
 
+*   **AI Story Illustrator:** Use Google Gemini to automatically analyze your story and insert context-aware image tags, then generate unique illustrations using AI.
+*   **Magic Image:** Highlight a specific sentence or paragraph and let the AI "Magic Image" creator build a detailed visual prompt and illustration for that exact scene.
+*   **Quick Chat:** Chat directly with a connected peer while sharing stories.
 *   **Tap-to-Speak:** Simply tap on any word in a story to hear it read aloud using the browser's built-in speech synthesis. This provides immediate auditory feedback, reinforcing word recognition.
 *   **Syllable Breakdown:** Long-press on any word to see it broken down into syllables, helping with decoding complex words.
 *   **Story Sharing:** Connect two devices directly (Peer-to-Peer) to share stories instantly. Great for parents sending stories to a child's device.
@@ -26,8 +29,8 @@ This project is built with a focus on simplicity and modern web standards, witho
 *   **Offline Capabilities**: Progressive Web App (PWA) with a Service Worker and Web App Manifest.
 *   **Connectivity**: PeerJS for WebRTC peer-to-peer data transfer.
 *   **Data Storage**:
-    *   Browser `localStorage` for tracking word statistics and settings.
-    *   **Origin Private File System (OPFS)** for storing created and shared stories locally.
+    *   **localStorage** for tracking word statistics, user settings, and story metadata.
+    *   **IndexedDB** via a custom storage helper for robust management of large AI-generated image assets.
 
 ## 🚀 How to Run Locally
 
