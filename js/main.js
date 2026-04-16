@@ -6,6 +6,8 @@ import { showPeerConnectionModal } from './modals/peer_connection_modal.js';
 import * as aiManager from './ai-manager.js';
 import { UIManager } from './UIManager.js';
 import { GameManager } from './GameManager.js';
+import * as VoiceManager from './VoiceManager.js';
+import * as GameUI from './GameUI.js';
 
 const dom = {
     storyInput: document.getElementById('story-input'),
@@ -46,6 +48,7 @@ const dom = {
     googleApiKeyInput: document.getElementById('settings-google-api-key'),
     apiKeyStatus: document.getElementById('api-key-status'),
     testApiKeyBtn: document.getElementById('test-api-key-btn'),
+    settingsVoiceSelection: document.getElementById('settings-voice-selection'),
     getApiKeyHelpBtn: document.getElementById('get-api-key-help-btn'),
     checkUpdatesBtn: document.getElementById('check-updates-btn'),
     // Chat
@@ -78,7 +81,6 @@ const dom = {
 
 const toastManager = new ToastManager();
 const WORD_STATS_KEY = 'readingHelperWordStats';
-const GAME_SETS_KEY = 'readingHelperGameWordSets';
 let currentPronunciations = {}; // Holds the pronunciation guide for the currently loaded story
 let currentStoryPath = '';      // Holds the base path for the current story module
 let currentPhonetics = {};      // Holds the phonetic guide for the currently loaded story
@@ -91,13 +93,9 @@ let touchStartX = 0;
 let touchStartY = 0;
 const LONG_PRESS_DURATION = 400; // 400ms for a long press
 let isCreatorMode = false;
-let currentlySpeakingElement = null; // Tracks the element currently being spoken
-let currentUtterance = null; // Keep a reference globally to prevent garbage collection bugs
 let currentStoryId = null; // Holds the ID of the currently loaded user story
 let sessionImages = {}; // Holds Base64 images for the current session
 let isPeerConnected = false;
-let selectedGameSetId = null; // Currently selected set in the picker
-let gameTimerInterval = null; // Tracks the interval for the ticking game timer
 
 /**
  * Shared reference for the live preview listener to allow proper cleanup.
@@ -120,46 +118,23 @@ const peerAdapter = {
 
 const gameManager = new GameManager({
     toastManager,
-    speakFn: (word) => speakText(word),
+    speakFn: (word) => VoiceManager.speakText(word),
     onGameOver: (score, time, errors) => {
-        if (gameTimerInterval) {
-            clearInterval(gameTimerInterval);
-            gameTimerInterval = null;
-        }
+        GameUI.stopTimer();
         
         setTimeout(() => {
-            renderGameGrid();
-            speakText("Amazing job! You finished the game!");
-            startCelebration(score, time, errors);
+            GameUI.renderGameGrid();
+            VoiceManager.speakText("Amazing job! You finished the game!");
+            GameUI.startCelebration(score, time, errors);
         }, 1500);
     }
 });
 
-function renderGameGrid() {
-    dom.gameGrid.style.gridTemplateColumns = `repeat(${gameManager.state.config.gridSize[0]}, 1fr)`;
-    dom.gameGrid.innerHTML = gameManager.state.gridWords.map((word, index) => {
-        if (!word) return '<div class="flash-card-placeholder"></div>';
-        return `
-            <div class="flash-card" data-index="${index}" data-word="${word}">
-                <div class="card-inner">
-                    <div class="card-front">${word}</div>
-                    <div class="card-back"><img src="icons/icon-tab.png"></div>
-                </div>
-            </div>
-        `;
-    }).join('');
-    
-    if (dom.gameRemainingCount) {
-        const totalRemaining = gameManager.state.wordPool.length + gameManager.state.gridWords.filter(w => w !== null).length;
-        dom.gameRemainingCount.textContent = totalRemaining;
-    }
-}
-
-
-
-
 const chatManager = new ChatManager(peerAdapter, () => ({ name: localStorage.getItem('readinghelper_display_name') || 'Anonymous' }));
 export const uiManager = new UIManager(dom, chatManager, toastManager);
+
+// Initialize the Game UI module so it has access to the DOM and Managers
+GameUI.init({ dom, gameManager, uiManager });
 
 /**
  * Unregisters service workers, clears caches, and all local storage to perform a full reset.
@@ -271,8 +246,18 @@ async function init() {
     await loadStoryLibrary();
     setupEventListeners();
     renderDashboard();
-    renderGameSetEditor();
+    GameUI.renderGameSetEditor();
+    VoiceManager.populateVoiceList(dom.settingsVoiceSelection);
     performStorageMaintenance();
+
+    // Handle PWA Shortcuts/URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const mode = urlParams.get('mode');
+    if (mode === 'game') {
+        GameUI.openGameSetSelector();
+    } else if (mode === 'dashboard') {
+        uiManager.showView('dashboard');
+    }
 }
 
 /**
@@ -304,23 +289,27 @@ function setupEventListeners() {
         { element: dom.saveStoryBtn, event: 'click', handler: saveUserStory },
 
         // Sidenav / Settings
-        { element: dom.btnGameMode, event: 'click', handler: openGameSetSelector },
+        { element: dom.btnGameMode, event: 'click', handler: () => GameUI.openGameSetSelector() },
         { element: dom.gameSetSelectXBtn, event: 'click', handler: () => dom.gameSetSelectModal.classList.add('hidden') },
-        { element: dom.gameSetSelectList, event: 'click', handler: handleGameSetSelection },
-        { element: dom.confirmGameStartBtn, event: 'click', handler: startSelectedGame },
-        { element: dom.addGameSetBtn, event: 'click', handler: addNewGameSet },
-        { element: dom.gameSetEditorList, event: 'click', handler: handleGameSetEditorAction },
-        { element: dom.gameSetEditorList, event: 'change', handler: saveGameSetFromUI },
+        { element: dom.settingsVoiceSelection, event: 'change', handler: (e) => {
+            localStorage.setItem(VoiceManager.VOICE_PREF_KEY, e.target.value);
+            toastManager.show('Voice preference saved!', 'success');
+        }},
+        { element: dom.gameSetSelectList, event: 'click', handler: (e) => GameUI.handleGameSetSelection(e) },
+        { element: dom.confirmGameStartBtn, event: 'click', handler: () => GameUI.startSelectedGame() },
+        { element: dom.addGameSetBtn, event: 'click', handler: () => GameUI.addNewGameSet() },
+        { element: dom.gameSetEditorList, event: 'click', handler: (e) => GameUI.handleGameSetEditorAction(e) },
+        { element: dom.gameSetEditorList, event: 'change', handler: (e) => GameUI.saveGameSetFromUI(e) },
         { element: dom.testApiKeyBtn, event: 'click', handler: testGeminiConnection },
         { element: dom.checkUpdatesBtn, event: 'click', handler: checkForUpdates },
-        { element: dom.gameRepeatBtn, event: 'click', handler: () => speakText(gameManager.state.targetWord) },
+        { element: dom.gameRepeatBtn, event: 'click', handler: () => VoiceManager.speakText(gameManager.state.targetWord) },
         { element: dom.celebDoneBtn, event: 'click', handler: () => {
             dom.celebrationModal.classList.add('hidden');
             uiManager.showView('reader');
         }},
         { element: dom.celebPlayAgainBtn, event: 'click', handler: () => {
             dom.celebrationModal.classList.add('hidden');
-            startSelectedGame();
+            GameUI.startSelectedGame();
         }},
     ];
 
@@ -348,7 +337,7 @@ function setupEventListeners() {
         
         if (gameManager.handleChoice(word, index)) {
             card.classList.add('flipped');
-            setTimeout(() => renderGameGrid(), 800);
+            setTimeout(() => GameUI.renderGameGrid(), 800);
         }
     });
 
@@ -693,92 +682,7 @@ function speakWordFromStory(text) {
     // Find the element to highlight
     const elementToHighlight = activeWordElement;
 
-    speakText(textToSpeak, elementToHighlight);
-}
-
-/**
- * The core speech synthesis function.
- * @param {string} textToSpeak The exact text to be spoken.
- * @param {HTMLElement} [elementToHighlight] Optional element to highlight while speaking.
- */
-function speakText(textToSpeak, elementToHighlight = null) {
-    if (!('speechSynthesis' in window)) {
-        alert('Sorry, your browser does not support text-to-speech.');
-        return;
-    }
-
-    // Cancel current speech
-    window.speechSynthesis.cancel();
-
-    // Cleanup highlights
-    if (currentlySpeakingElement) {
-        currentlySpeakingElement.classList.remove('speaking');
-    }
-    currentlySpeakingElement = elementToHighlight;
-
-    // Create a new utterance and store it globally
-    currentUtterance = new SpeechSynthesisUtterance(textToSpeak);
-    
-    // Voice selection logic
-    let voices = window.speechSynthesis.getVoices();
-
-    // If list is still empty (common on first call), try to fetch it again
-    if (voices.length === 0) voices = window.speechSynthesis.getVoices();
-
-    console.log(`[Speech] Available voices: ${voices.length}`);
-    
-    // Robust selection: Handles en-US, en_US, and prioritizes quality "Natural" voices
-    const isUS = (v) => v.lang.toLowerCase().replace('_', '-') === 'en-us';
-    const isEnglish = (v) => v.lang.toLowerCase().startsWith('en');
-    const isHighQuality = (v) => v.name.includes('Google') || v.name.includes('Natural');
-
-    const preferredVoice = 
-        voices.find(v => isUS(v) && isHighQuality(v)) 
-        || voices.find(v => isEnglish(v) && isHighQuality(v)) 
-        || voices.find(v => isUS(v))
-        || voices.find(v => isEnglish(v));
-    
-    if (preferredVoice) {
-        console.log(`[Speech] Selected Voice: ${preferredVoice.name} (${preferredVoice.lang}) ${preferredVoice.default ? '[System Default]' : ''}`);
-        currentUtterance.voice = preferredVoice;
-    } else {
-        console.warn(`[Speech] No preferred English voice found in the ${voices.length} available voices. Falling back to browser default.`);
-    }
-
-    // Settings for young learners
-    // Lower rate further for very short words like "the" or "fast"
-    currentUtterance.rate = textToSpeak.length <= 4 ? 0.55 : 0.75;
-    currentUtterance.pitch = textToSpeak.length <= 4 ? 1.15 : 1.0;
-    currentUtterance.volume = 1.0;
-    currentUtterance.lang = 'en-US';
-
-    console.log(`[Speech] Utterance Config - Rate: ${currentUtterance.rate}, Pitch: ${currentUtterance.pitch}, Lang: ${currentUtterance.lang}`);
-
-    currentUtterance.onstart = () => {
-        if (currentlySpeakingElement) {
-            currentlySpeakingElement.classList.add('speaking');
-        }
-    };
-
-    currentUtterance.onend = () => {
-        if (currentlySpeakingElement) {
-            currentlySpeakingElement.classList.remove('speaking');
-            currentlySpeakingElement = null;
-        }
-        currentUtterance = null; // Clear reference
-    };
-
-    currentUtterance.onerror = (event) => {
-        console.error('SpeechSynthesisUtterance error', event);
-        if (currentlySpeakingElement) {
-            currentlySpeakingElement.classList.remove('speaking');
-        }
-    };
-
-    // Small timeout ensures the 'cancel' has finished processing in the browser's event loop
-    setTimeout(() => {
-        window.speechSynthesis.speak(currentUtterance);
-    }, 50);
+    VoiceManager.speakText(textToSpeak, elementToHighlight);
 }
 
 /**
@@ -1196,7 +1100,7 @@ async function loadUserStory(id) {
 function showSyllablePopup(word, targetElement) {
     popupWasShown = false; // Reset the flag at the start
     const popup = dom.syllablePopup;
-    const syllabifiedWord = getSyllables(word.trim());
+    const syllabifiedWord = VoiceManager.getSyllables(word.trim(), currentPhonetics);
 
     // Don't show pop-up if the word couldn't be split
     if (syllabifiedWord === word.toLowerCase()) {
@@ -1402,7 +1306,7 @@ function handlePronunciationEditorClick(event) {
         const replacementInput = pairElement.querySelector('.replacement-word');
         const textToSpeak = replacementInput.value.trim();
         if (textToSpeak) {
-            speakText(textToSpeak);
+            VoiceManager.speakText(textToSpeak);
         }
     } else if (target.classList.contains('remove-btn')) {
         pairElement.remove();
@@ -1533,246 +1437,17 @@ async function deleteMyStory(storyId, storyTitle) {
     await loadStoryLibrary();
 }
 
-/**
- * Handles the visual celebration when a game is completed.
- */
-function startCelebration(score, time, errors) {
-    dom.celebScore.textContent = score;
-    dom.celebTime.textContent = `${Math.round(time)}s`;
-    dom.celebErrors.textContent = errors;
-    dom.celebrationModal.classList.remove('hidden');
-
-    const canvas = dom.celebrationCanvas;
-    const ctx = canvas.getContext('2d');
-    let animationFrame;
-
-    // Set canvas size
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    const words = ["Great!", "Awesome!", "Wow!", "Nice!", "Star!", "Reader!", "Super!"];
-    const particles = [];
-
-    class WordParticle {
-        constructor() {
-            this.reset();
-        }
-        reset() {
-            this.x = canvas.width / 2;
-            this.y = canvas.height;
-            this.word = words[Math.floor(Math.random() * words.length)];
-            this.vx = (Math.random() - 0.5) * 10;
-            this.vy = -Math.random() * 15 - 10;
-            this.gravity = 0.25;
-            this.alpha = 1;
-            this.rotation = (Math.random() - 0.5) * 0.2;
-            this.angle = 0;
-            this.color = `hsl(${Math.random() * 360}, 70%, 60%)`;
-            this.fontSize = Math.floor(Math.random() * 20) + 24;
-            this.isExploded = false;
-        }
-        update() {
-            this.vy += this.gravity;
-            this.x += this.vx;
-            this.y += this.vy;
-            this.angle += this.rotation;
-
-            if (this.vy >= 0 && !this.isExploded) {
-                this.isExploded = true;
-                // Create "mini" sparks
-                for(let i=0; i<5; i++) {
-                    particles.push(new Spark(this.x, this.y, this.color));
-                }
-            }
-
-            if (this.y > canvas.height + 50) this.reset();
-        }
-        draw() {
-            ctx.save();
-            ctx.translate(this.x, this.y);
-            ctx.rotate(this.angle);
-            ctx.fillStyle = this.color;
-            ctx.font = `bold ${this.fontSize}px 'Segoe UI', sans-serif`;
-            ctx.fillText(this.word, 0, 0);
-            ctx.restore();
-        }
-    }
-
-    class Spark {
-        constructor(x, y, color) {
-            this.x = x; this.y = y; this.color = color;
-            this.vx = (Math.random() - 0.5) * 8;
-            this.vy = (Math.random() - 0.5) * 8;
-            this.alpha = 1;
-        }
-        update() {
-            this.x += this.vx; this.y += this.vy;
-            this.alpha -= 0.02;
-        }
-        draw() {
-            ctx.fillStyle = this.color;
-            ctx.globalAlpha = this.alpha;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.globalAlpha = 1;
-        }
-    }
-
-    for (let i = 0; i < 8; i++) particles.push(new WordParticle());
-
-    function animate() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        particles.forEach((p, i) => {
-            p.update(); p.draw();
-            if (p instanceof Spark && p.alpha <= 0) particles.splice(i, 1);
-        });
-        if (!dom.celebrationModal.classList.contains('hidden')) {
-            animationFrame = requestAnimationFrame(animate);
-        }
-    }
-    animate();
-}
-
-/**
- * Game Set Storage and UI Logic
- */
-function getGameWordSets() {
-    const sets = localStorage.getItem(GAME_SETS_KEY);
-    if (!sets) {
-        return [{ id: 'default', name: 'Default Set', words: 'the, and, cat, dog, house, run, jump, blue, red, big, small, fast', lastUsed: 1 }];
-    }
-    return JSON.parse(sets);
-}
-
-function saveGameWordSets(sets) {
-    localStorage.setItem(GAME_SETS_KEY, JSON.stringify(sets));
-}
-
-function renderGameSetEditor() {
-    const sets = getGameWordSets();
-    dom.gameSetEditorList.innerHTML = sets.map(set => `
-        <div class="game-set-editor-item" data-id="${set.id}">
-            <input type="text" class="set-name" value="${set.name}" placeholder="Set Name (e.g. Week 1)">
-            <textarea class="set-words" placeholder="Words separated by commas...">${set.words}</textarea>
-            <div style="display: flex; justify-content: flex-end;">
-                <button class="theme-button destructive delete-set-btn">Delete Set</button>
-            </div>
-        </div>
-    `).join('');
-}
-
-function addNewGameSet() {
-    const sets = getGameWordSets();
-    const newSet = {
-        id: `set-${Date.now()}`,
-        name: `New Set ${sets.length + 1}`,
-        words: '',
-        lastUsed: Date.now()
-    };
-    sets.push(newSet);
-    saveGameWordSets(sets);
-    renderGameSetEditor();
-}
-
-function saveGameSetFromUI(e) {
-    const item = e.target.closest('.game-set-editor-item');
-    if (!item) return;
-    
-    const id = item.dataset.id;
-    const name = item.querySelector('.set-name').value;
-    const words = item.querySelector('.set-words').value;
-    
-    const sets = getGameWordSets();
-    const index = sets.findIndex(s => s.id === id);
-    if (index > -1) {
-        sets[index].name = name;
-        sets[index].words = words;
-        saveGameWordSets(sets);
+// Pre-load voices so they are ready when the user clicks
+if ('speechSynthesis' in window) {
+    window.speechSynthesis.getVoices();
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+        speechSynthesis.onvoiceschanged = () => {
+            window.speechSynthesis.getVoices();
+            VoiceManager.populateVoiceList(dom.settingsVoiceSelection);
+        };
     }
 }
 
-function handleGameSetEditorAction(e) {
-    if (e.target.classList.contains('delete-set-btn')) {
-        const item = e.target.closest('.game-set-editor-item');
-        const id = item.dataset.id;
-        if (confirm('Delete this word set?')) {
-            const sets = getGameWordSets().filter(s => s.id !== id);
-            saveGameWordSets(sets);
-            renderGameSetEditor();
-        }
-    }
-}
-
-/**
- * Game Selection Flow
- */
-function openGameSetSelector() {
-    uiManager.closeNav();
-    const sets = getGameWordSets().sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
-    
-    // Default selection to most recent
-    selectedGameSetId = sets[0]?.id;
-    
-    renderGameSetSelector(sets);
-    dom.gameSetSelectModal.classList.remove('hidden');
-}
-
-function renderGameSetSelector(sets) {
-    dom.gameSetSelectList.innerHTML = sets.map(set => `
-        <div class="story-item game-set-item ${set.id === selectedGameSetId ? 'selected' : ''}" data-id="${set.id}">
-            <span class="story-item-title">${set.name}</span>
-            <span style="font-size: 0.8rem; opacity: 0.7;">${set.words.split(',').length} words</span>
-        </div>
-    `).join('');
-}
-
-function handleGameSetSelection(e) {
-    const item = e.target.closest('.game-set-item');
-    if (!item) return;
-    
-    selectedGameSetId = item.dataset.id;
-    document.querySelectorAll('.game-set-item').forEach(el => el.classList.remove('selected'));
-    item.classList.add('selected');
-}
-
-function startSelectedGame() {
-    const sets = getGameWordSets();
-    const set = sets.find(s => s.id === selectedGameSetId);
-    
-    if (!set || !set.words.trim()) {
-        alert('Please select a set that contains words!');
-        return;
-    }
-
-    // Update last used
-    set.lastUsed = Date.now();
-    saveGameWordSets(sets);
-
-    // Prep words
-    const wordList = set.words.split(',').map(w => w.trim()).filter(w => w);
-    
-    const wordSet = {
-        title: set.name,
-        words: wordList,
-        sampleSize: wordList.length
-    };
-
-    dom.gameSetSelectModal.classList.add('hidden');
-    uiManager.showView('game');
-    gameManager.start(wordSet, { gridSize: [4, 3] });
-    renderGameGrid();
-
-    // Start the UI timer display
-    if (gameTimerInterval) clearInterval(gameTimerInterval);
-    dom.gameTimer.textContent = '0s';
-    gameTimerInterval = setInterval(() => {
-        if (gameManager.state.active && dom.gameTimer) {
-            const elapsed = Math.floor((Date.now() - gameManager.state.startTime) / 1000);
-            dom.gameTimer.textContent = `${elapsed}s`;
-        }
-    }, 1000);
-}
 
 // Initialize the application
 init();
