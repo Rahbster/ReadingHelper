@@ -723,3 +723,161 @@ header h1 {
 .retry-image-btn:hover {
     opacity: 0.9;
 }
+
+/* --- Game Mode Styles --- */
+#game-view {
+    text-align: center;
+}
+
+.game-stats {
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 20px;
+    font-weight: bold;
+    background: var(--surface-color);
+    padding: 10px;
+    border-radius: 8px;
+}
+
+.game-grid {
+    display: grid;
+    gap: 15px;
+    margin: 0 auto;
+    max-width: 800px;
+    perspective: 1000px;
+}
+
+.flash-card {
+    aspect-ratio: 1;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+    height: 120px;
+}
+
+.flash-card.flipped {
+    transform: rotateY(180deg);
+    cursor: default;
+}
+
+.card-front, .card-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    font-size: 1.2rem;
+    padding: 10px;
+    box-sizing: border-box;
+    background-color: var(--surface-color);
+    border: 2px solid var(--primary-color);
+}
+
+.card-back {
+    transform: rotateY(180deg);
+    background-color: #f8f9fa;
+}
+
+/* --- Celebration Modal --- */
+.celebration-content {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+    display: flex !important;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+#celebration-canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1; /* Behind the UI, but above the background */
+    pointer-events: none;
+}
+
+.celebration-ui {
+    position: relative;
+    z-index: 10;
+    background: var(--surface-color);
+    padding: 2.5rem;
+    border-radius: 24px;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+    width: 90%;
+    max-width: 400px;
+    max-height: 90vh;
+    overflow-y: auto;
+    text-align: center;
+    animation: celebratePop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes celebratePop {
+    0% { transform: scale(0.5); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+.celebration-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 2rem;
+}
+
+.celeb-stat {
+    background: var(--background-color);
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 1.2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.theme-button.large {
+    width: 100%;
+    padding: 1rem;
+    font-size: 1.2rem;
+    border-radius: 12px;
+}
+.card-back img {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 8px;
+}
+
+/* --- Game Set Editor --- */
+.game-set-editor-item {
+    background-color: var(--surface-color);
+    padding: 1.5rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    border: 1px solid #ddd;
+    text-align: left;
+}
+.game-set-editor-item input {
+    font-size: 1.2rem;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+    width: 100%;
+}
+.game-set-editor-item textarea {
+    font-size: 1rem;
+    width: 100%;
+}
+.game-set-item.selected {
+    border: 3px solid var(--primary-hover);
+    background-color: var(--item-hover-bg);
+}

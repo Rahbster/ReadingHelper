@@ -68,6 +68,26 @@ export class UIManager {
         this.dom.chatModal.classList.add('hidden');
     }
 
+    showView(viewName) {
+        // Hide all major views
+        this.dom.readerView?.classList.add('hidden');
+        this.dom.gameView?.classList.add('hidden');
+        this.dom.dashboardView?.classList.add('hidden');
+
+        if (viewName === 'reader') {
+            this.dom.readerView?.classList.remove('hidden');
+            this.dom.chooseStoryBtn?.classList.remove('hidden');
+            if (this.dom.toggleDashboardBtn) this.dom.toggleDashboardBtn.querySelector('span').textContent = 'Dashboard';
+        } else if (viewName === 'game') {
+            this.dom.gameView?.classList.remove('hidden');
+            this.dom.chooseStoryBtn?.classList.add('hidden');
+        } else if (viewName === 'dashboard') {
+            this.dom.dashboardView?.classList.remove('hidden');
+            this.dom.chooseStoryBtn?.classList.add('hidden');
+            if (this.dom.toggleDashboardBtn) this.dom.toggleDashboardBtn.querySelector('span').textContent = 'Back to Reader';
+        }
+    }
+
     updateGoogleApiKey(event) {
         const key = event.target.value.trim();
         localStorage.setItem('google_ai_api_key', key);
@@ -87,12 +107,8 @@ export class UIManager {
     }
 
     toggleDashboard() {
-        const isDashboardVisible = this.dom.dashboardView.classList.toggle('hidden');
-        this.dom.readerView.classList.toggle('hidden', !isDashboardVisible);
-        
-        // Update button text and visibility based on view
-        this.dom.toggleDashboardBtn.querySelector('span').textContent = isDashboardVisible ? 'Dashboard' : 'Back to Reader';
-        this.dom.chooseStoryBtn.classList.toggle('hidden', !isDashboardVisible);
+        const isDashboardHidden = this.dom.dashboardView.classList.contains('hidden');
+        this.showView(isDashboardHidden ? 'dashboard' : 'reader');
     }
 
     openStoryModal() {

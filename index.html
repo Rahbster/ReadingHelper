@@ -73,6 +73,13 @@
             </button>
         </div>
 
+        <div class="sidenav-item">
+            <button id="btn-game-mode" class="theme-button full-width">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;"><path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+                <span>Play Game</span>
+            </button>
+        </div>
+
         <hr class="sidenav-divider">
 
         <div class="sidenav-item">
@@ -146,6 +153,16 @@
             </div>
         </div>
 
+        <div id="game-view" class="hidden">
+            <div class="game-stats">
+                <div>Find: <span id="game-target-word">...</span></div>
+                <div>Time: <span id="game-timer">0s</span></div>
+                <div>Left: <span id="game-remaining-count">0</span></div>
+            </div>
+            <div id="game-grid" class="game-grid"></div>
+            <button id="game-repeat-btn" class="theme-button" style="margin-top: 20px;">Repeat Word 🔊</button>
+        </div>
+
         <div id="dashboard-view" class="hidden">
             <h2>Tricky Words</h2>
             <p>This list shows the words that have been tapped the most, helping you see where to focus.</p>
@@ -160,6 +177,14 @@
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6zm-1-8h2v4h-2zm0-4h2v2h-2z"/></svg>
                     <span>Reset App</span></button>
             </div>
+
+            <div id="game-management" style="margin-top: 2rem; border-top: 2px solid var(--primary-color); padding-top: 1rem;">
+                <h3>Game Word Sets</h3>
+                <p>Create lists of words for the Flashcard game (e.g., "Week 1", "Animals").</p>
+                <div id="game-set-editor-list"></div>
+                <button id="add-game-set-btn" class="theme-button"><span>+ Add New Word Set</span></button>
+            </div>
+
             <div id="tricky-words-list">
                 <!-- Word stats will be populated here by JavaScript -->
             </div>
@@ -182,6 +207,35 @@
                 <button id="load-from-url-btn" class="theme-button">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
                     <span>Load from Web...</span></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Set Selection Modal -->
+    <div id="game-set-select-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Choose a Word Set</h2>
+            <button id="game-set-select-x-btn" class="modal-close-btn" aria-label="Close">&times;</button>
+            <div id="game-set-select-list" class="story-list" style="max-height: 50vh; overflow-y: auto; margin: 15px 0;">
+            </div>
+            <div class="load-options">
+                <button id="confirm-game-start-btn" class="theme-button large">Start Flashcard Game</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Celebration Modal -->
+    <div id="celebration-modal" class="modal hidden">
+        <div class="modal-content celebration-content">
+            <canvas id="celebration-canvas"></canvas>
+            <div class="celebration-ui">
+                <h2 class="celebration-title">🌟 Fantastic Reading! 🌟</h2>
+                <div class="celebration-stats">
+                    <div class="celeb-stat">Score: <span id="celeb-score">0</span></div>
+                    <div class="celeb-stat">Time: <span id="celeb-time">0s</span></div>
+                    <div class="celeb-stat">Errors: <span id="celeb-errors">0</span></div>
+                </div>
+                <button id="celeb-done-btn" class="theme-button large">Back to Stories</button>
             </div>
         </div>
     </div>

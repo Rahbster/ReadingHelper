@@ -5,6 +5,7 @@ import { ChatManager } from './ChatManager.js';
 import { showPeerConnectionModal } from './modals/peer_connection_modal.js';
 import * as aiManager from './ai-manager.js';
 import { UIManager } from './UIManager.js';
+import { GameManager } from './GameManager.js';
 
 const dom = {
     storyInput: document.getElementById('story-input'),
@@ -50,10 +51,33 @@ const dom = {
     btnOpenChat: document.getElementById('btn-open-chat'),
     chatModal: document.getElementById('chat-modal'),
     closeChatModalBtn: document.getElementById('close-chat-modal'),
+    // Game Set Management
+    gameSetEditorList: document.getElementById('game-set-editor-list'),
+    addGameSetBtn: document.getElementById('add-game-set-btn'),
+    gameSetSelectModal: document.getElementById('game-set-select-modal'),
+    gameSetSelectList: document.getElementById('game-set-select-list'),
+    gameSetSelectXBtn: document.getElementById('game-set-select-x-btn'),
+    confirmGameStartBtn: document.getElementById('confirm-game-start-btn'),
+    // Celebration
+    celebrationModal: document.getElementById('celebration-modal'),
+    celebrationCanvas: document.getElementById('celebration-canvas'),
+    celebScore: document.getElementById('celeb-score'),
+    celebTime: document.getElementById('celeb-time'),
+    celebErrors: document.getElementById('celeb-errors'),
+    celebDoneBtn: document.getElementById('celeb-done-btn'),
+    // Game View
+    gameView: document.getElementById('game-view'),
+    gameGrid: document.getElementById('game-grid'),
+    gameTargetWord: document.getElementById('game-target-word'),
+    gameTimer: document.getElementById('game-timer'),
+    gameRemainingCount: document.getElementById('game-remaining-count'),
+    gameRepeatBtn: document.getElementById('game-repeat-btn'),
+    btnGameMode: document.getElementById('btn-game-mode'),
 };
 
 const toastManager = new ToastManager();
 const WORD_STATS_KEY = 'readingHelperWordStats';
+const GAME_SETS_KEY = 'readingHelperGameWordSets';
 let currentPronunciations = {}; // Holds the pronunciation guide for the currently loaded story
 let currentStoryPath = '';      // Holds the base path for the current story module
 let currentPhonetics = {};      // Holds the phonetic guide for the currently loaded story
@@ -67,19 +91,63 @@ let touchStartY = 0;
 const LONG_PRESS_DURATION = 400; // 400ms for a long press
 let isCreatorMode = false;
 let currentlySpeakingElement = null; // Tracks the element currently being spoken
+let currentUtterance = null; // Keep a reference globally to prevent garbage collection bugs
 let currentStoryId = null; // Holds the ID of the currently loaded user story
 let sessionImages = {}; // Holds Base64 images for the current session
 let isPeerConnected = false;
+let selectedGameSetId = null; // Currently selected set in the picker
 
 /**
  * Shared reference for the live preview listener to allow proper cleanup.
  */
-const handleStoryInputPreview = () => renderStory();
+let renderTimeout;
+const handleStoryInputPreview = () => {
+    // Debounce rendering to improve performance during active typing
+    if (renderTimeout) clearTimeout(renderTimeout);
+    renderTimeout = setTimeout(() => {
+        console.log("[UI] Debounced render triggered");
+        renderStory();
+    }, 300);
+};
+
 
 // Adapter to allow ChatManager to use peerService
 const peerAdapter = {
     send: (data) => peerService.sendData(data)
 };
+
+const gameManager = new GameManager({
+    toastManager,
+    speakFn: (word) => speakText(word),
+    onGameOver: (score, time, errors) => {
+        setTimeout(() => {
+            renderGameGrid();
+            speakText("Amazing job! You finished the game!");
+            startCelebration(score, time, errors);
+        }, 1500);
+    }
+});
+
+function renderGameGrid() {
+    dom.gameGrid.style.gridTemplateColumns = `repeat(${gameManager.state.config.gridSize[0]}, 1fr)`;
+    dom.gameGrid.innerHTML = gameManager.state.gridWords.map((word, index) => {
+        if (!word) return '<div class="flash-card-placeholder"></div>';
+        return `
+            <div class="flash-card" data-index="${index}" data-word="${word}">
+                <div class="card-inner">
+                    <div class="card-front">${word}</div>
+                    <div class="card-back"><img src="icons/icon-tab.png"></div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    if (dom.gameTargetWord) dom.gameTargetWord.textContent = gameManager.state.targetWord || '...';
+    if (dom.gameRemainingCount) dom.gameRemainingCount.textContent = gameManager.state.wordPool.length;
+}
+
+
+
 
 const chatManager = new ChatManager(peerAdapter, () => ({ name: localStorage.getItem('readinghelper_display_name') || 'Anonymous' }));
 export const uiManager = new UIManager(dom, chatManager, toastManager);
@@ -152,6 +220,11 @@ async function setupServiceWorker() {
  * Main initialization function.
  */
 async function init() {
+    // Prime the speech synthesis engine early to mitigate the empty voice list race condition
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.getVoices();
+    }
+
     uiManager.initTheme();
     loadWordStats();
     setupServiceWorker();
@@ -163,6 +236,7 @@ async function init() {
     await loadStoryLibrary();
     setupEventListeners();
     renderDashboard();
+    renderGameSetEditor();
     performStorageMaintenance();
 }
 
@@ -195,7 +269,19 @@ function setupEventListeners() {
         { element: dom.saveStoryBtn, event: 'click', handler: saveUserStory },
 
         // Sidenav / Settings
+        { element: dom.btnGameMode, event: 'click', handler: openGameSetSelector },
+        { element: dom.gameSetSelectXBtn, event: 'click', handler: () => dom.gameSetSelectModal.classList.add('hidden') },
+        { element: dom.gameSetSelectList, event: 'click', handler: handleGameSetSelection },
+        { element: dom.confirmGameStartBtn, event: 'click', handler: startSelectedGame },
+        { element: dom.addGameSetBtn, event: 'click', handler: addNewGameSet },
+        { element: dom.gameSetEditorList, event: 'click', handler: handleGameSetEditorAction },
+        { element: dom.gameSetEditorList, event: 'change', handler: saveGameSetFromUI },
         { element: dom.testApiKeyBtn, event: 'click', handler: testGeminiConnection },
+        { element: dom.gameRepeatBtn, event: 'click', handler: () => speakText(gameManager.state.targetWord) },
+        { element: dom.celebDoneBtn, event: 'click', handler: () => {
+            dom.celebrationModal.classList.add('hidden');
+            uiManager.showView('reader');
+        }},
     ];
 
     listeners.forEach(({ element, event, handler }) => {
@@ -211,6 +297,19 @@ function setupEventListeners() {
     dom.storyDisplay.addEventListener('contextmenu', (e) => {
         // Prevent the system context menu on speakable words to allow the custom long-press syllable popup
         if (e.target.closest('.speakable-word')) e.preventDefault();
+    });
+
+    dom.gameGrid.addEventListener('click', (e) => {
+        const card = e.target.closest('.flash-card');
+        if (!card || card.classList.contains('flipped')) return;
+        
+        const word = card.dataset.word;
+        const index = parseInt(card.dataset.index);
+        
+        if (gameManager.handleChoice(word, index)) {
+            card.classList.add('flipped');
+            setTimeout(() => renderGameGrid(), 800);
+        }
     });
 
     dom.storyDisplay.addEventListener('click', (e) => {
@@ -567,36 +666,79 @@ function speakText(textToSpeak, elementToHighlight = null) {
         alert('Sorry, your browser does not support text-to-speech.');
         return;
     }
-    // If speech is happening, calling cancel will trigger the 'onend' of the current utterance,
-    // which will clean up the highlight. We need to ensure this happens before starting the new one.
+
+    // Cancel current speech
     window.speechSynthesis.cancel();
 
-    // Defensive cleanup for any orphaned highlights
+    // Cleanup highlights
     if (currentlySpeakingElement) {
         currentlySpeakingElement.classList.remove('speaking');
     }
     currentlySpeakingElement = elementToHighlight;
 
-    console.log(`Speech Synthesis pronouncing: "${textToSpeak}"`);
+    // Create a new utterance and store it globally
+    currentUtterance = new SpeechSynthesisUtterance(textToSpeak);
+    
+    // Voice selection logic
+    let voices = window.speechSynthesis.getVoices();
 
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    utterance.rate = 0.8; // Speak a bit slower for clarity
-    utterance.lang = 'en-US'; // Hint to the TTS engine to use English pronunciation rules
+    // If list is still empty (common on first call), try to fetch it again
+    if (voices.length === 0) voices = window.speechSynthesis.getVoices();
 
-    utterance.onstart = () => {
+    console.log(`[Speech] Available voices: ${voices.length}`);
+    
+    // Robust selection: Handles en-US, en_US, and prioritizes quality "Natural" voices
+    const isUS = (v) => v.lang.toLowerCase().replace('_', '-') === 'en-us';
+    const isEnglish = (v) => v.lang.toLowerCase().startsWith('en');
+    const isHighQuality = (v) => v.name.includes('Google') || v.name.includes('Natural');
+
+    const preferredVoice = 
+        voices.find(v => isUS(v) && isHighQuality(v)) 
+        || voices.find(v => isEnglish(v) && isHighQuality(v)) 
+        || voices.find(v => isUS(v))
+        || voices.find(v => isEnglish(v));
+    
+    if (preferredVoice) {
+        console.log(`[Speech] Selected Voice: ${preferredVoice.name} (${preferredVoice.lang}) ${preferredVoice.default ? '[System Default]' : ''}`);
+        currentUtterance.voice = preferredVoice;
+    } else {
+        console.warn(`[Speech] No preferred English voice found in the ${voices.length} available voices. Falling back to browser default.`);
+    }
+
+    // Settings for young learners
+    // Lower rate further for very short words like "the" or "fast"
+    currentUtterance.rate = textToSpeak.length <= 4 ? 0.55 : 0.75;
+    currentUtterance.pitch = textToSpeak.length <= 4 ? 1.15 : 1.0;
+    currentUtterance.volume = 1.0;
+    currentUtterance.lang = 'en-US';
+
+    console.log(`[Speech] Utterance Config - Rate: ${currentUtterance.rate}, Pitch: ${currentUtterance.pitch}, Lang: ${currentUtterance.lang}`);
+
+    currentUtterance.onstart = () => {
         if (currentlySpeakingElement) {
             currentlySpeakingElement.classList.add('speaking');
         }
     };
 
-    utterance.onend = () => {
+    currentUtterance.onend = () => {
         if (currentlySpeakingElement) {
             currentlySpeakingElement.classList.remove('speaking');
             currentlySpeakingElement = null;
         }
+        currentUtterance = null; // Clear reference
     };
 
-    window.speechSynthesis.speak(utterance);
+    currentUtterance.onerror = (event) => {
+        console.error('SpeechSynthesisUtterance error', event);
+        if (currentlySpeakingElement) {
+            currentlySpeakingElement.classList.remove('speaking');
+        }
+    };
+
+    // Small timeout ensures the 'cancel' has finished processing in the browser's event loop
+    setTimeout(() => {
+        window.speechSynthesis.speak(currentUtterance);
+    }, 50);
 }
 
 /**
@@ -1323,6 +1465,237 @@ async function deleteMyStory(storyId, storyTitle) {
 
     await storyManager.deleteUserStory(storyId);
     await loadStoryLibrary();
+}
+
+/**
+ * Handles the visual celebration when a game is completed.
+ */
+function startCelebration(score, time, errors) {
+    dom.celebScore.textContent = score;
+    dom.celebTime.textContent = `${Math.round(time)}s`;
+    dom.celebErrors.textContent = errors;
+    dom.celebrationModal.classList.remove('hidden');
+
+    const canvas = dom.celebrationCanvas;
+    const ctx = canvas.getContext('2d');
+    let animationFrame;
+
+    // Set canvas size
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const words = ["Great!", "Awesome!", "Wow!", "Nice!", "Star!", "Reader!", "Super!"];
+    const particles = [];
+
+    class WordParticle {
+        constructor() {
+            this.reset();
+        }
+        reset() {
+            this.x = canvas.width / 2;
+            this.y = canvas.height;
+            this.word = words[Math.floor(Math.random() * words.length)];
+            this.vx = (Math.random() - 0.5) * 10;
+            this.vy = -Math.random() * 15 - 10;
+            this.gravity = 0.25;
+            this.alpha = 1;
+            this.rotation = (Math.random() - 0.5) * 0.2;
+            this.angle = 0;
+            this.color = `hsl(${Math.random() * 360}, 70%, 60%)`;
+            this.fontSize = Math.floor(Math.random() * 20) + 24;
+            this.isExploded = false;
+        }
+        update() {
+            this.vy += this.gravity;
+            this.x += this.vx;
+            this.y += this.vy;
+            this.angle += this.rotation;
+
+            if (this.vy >= 0 && !this.isExploded) {
+                this.isExploded = true;
+                // Create "mini" sparks
+                for(let i=0; i<5; i++) {
+                    particles.push(new Spark(this.x, this.y, this.color));
+                }
+            }
+
+            if (this.y > canvas.height + 50) this.reset();
+        }
+        draw() {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.angle);
+            ctx.fillStyle = this.color;
+            ctx.font = `bold ${this.fontSize}px 'Segoe UI', sans-serif`;
+            ctx.fillText(this.word, 0, 0);
+            ctx.restore();
+        }
+    }
+
+    class Spark {
+        constructor(x, y, color) {
+            this.x = x; this.y = y; this.color = color;
+            this.vx = (Math.random() - 0.5) * 8;
+            this.vy = (Math.random() - 0.5) * 8;
+            this.alpha = 1;
+        }
+        update() {
+            this.x += this.vx; this.y += this.vy;
+            this.alpha -= 0.02;
+        }
+        draw() {
+            ctx.fillStyle = this.color;
+            ctx.globalAlpha = this.alpha;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    for (let i = 0; i < 8; i++) particles.push(new WordParticle());
+
+    function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        particles.forEach((p, i) => {
+            p.update(); p.draw();
+            if (p instanceof Spark && p.alpha <= 0) particles.splice(i, 1);
+        });
+        if (!dom.celebrationModal.classList.contains('hidden')) {
+            animationFrame = requestAnimationFrame(animate);
+        }
+    }
+    animate();
+}
+
+/**
+ * Game Set Storage and UI Logic
+ */
+function getGameWordSets() {
+    const sets = localStorage.getItem(GAME_SETS_KEY);
+    if (!sets) {
+        return [{ id: 'default', name: 'Default Set', words: 'the, and, cat, dog, house, run, jump, blue, red, big, small, fast', lastUsed: 1 }];
+    }
+    return JSON.parse(sets);
+}
+
+function saveGameWordSets(sets) {
+    localStorage.setItem(GAME_SETS_KEY, JSON.stringify(sets));
+}
+
+function renderGameSetEditor() {
+    const sets = getGameWordSets();
+    dom.gameSetEditorList.innerHTML = sets.map(set => `
+        <div class="game-set-editor-item" data-id="${set.id}">
+            <input type="text" class="set-name" value="${set.name}" placeholder="Set Name (e.g. Week 1)">
+            <textarea class="set-words" placeholder="Words separated by commas...">${set.words}</textarea>
+            <div style="display: flex; justify-content: flex-end;">
+                <button class="theme-button destructive delete-set-btn">Delete Set</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function addNewGameSet() {
+    const sets = getGameWordSets();
+    const newSet = {
+        id: `set-${Date.now()}`,
+        name: `New Set ${sets.length + 1}`,
+        words: '',
+        lastUsed: Date.now()
+    };
+    sets.push(newSet);
+    saveGameWordSets(sets);
+    renderGameSetEditor();
+}
+
+function saveGameSetFromUI(e) {
+    const item = e.target.closest('.game-set-editor-item');
+    if (!item) return;
+    
+    const id = item.dataset.id;
+    const name = item.querySelector('.set-name').value;
+    const words = item.querySelector('.set-words').value;
+    
+    const sets = getGameWordSets();
+    const index = sets.findIndex(s => s.id === id);
+    if (index > -1) {
+        sets[index].name = name;
+        sets[index].words = words;
+        saveGameWordSets(sets);
+    }
+}
+
+function handleGameSetEditorAction(e) {
+    if (e.target.classList.contains('delete-set-btn')) {
+        const item = e.target.closest('.game-set-editor-item');
+        const id = item.dataset.id;
+        if (confirm('Delete this word set?')) {
+            const sets = getGameWordSets().filter(s => s.id !== id);
+            saveGameWordSets(sets);
+            renderGameSetEditor();
+        }
+    }
+}
+
+/**
+ * Game Selection Flow
+ */
+function openGameSetSelector() {
+    uiManager.closeNav();
+    const sets = getGameWordSets().sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+    
+    // Default selection to most recent
+    selectedGameSetId = sets[0]?.id;
+    
+    renderGameSetSelector(sets);
+    dom.gameSetSelectModal.classList.remove('hidden');
+}
+
+function renderGameSetSelector(sets) {
+    dom.gameSetSelectList.innerHTML = sets.map(set => `
+        <div class="story-item game-set-item ${set.id === selectedGameSetId ? 'selected' : ''}" data-id="${set.id}">
+            <span class="story-item-title">${set.name}</span>
+            <span style="font-size: 0.8rem; opacity: 0.7;">${set.words.split(',').length} words</span>
+        </div>
+    `).join('');
+}
+
+function handleGameSetSelection(e) {
+    const item = e.target.closest('.game-set-item');
+    if (!item) return;
+    
+    selectedGameSetId = item.dataset.id;
+    document.querySelectorAll('.game-set-item').forEach(el => el.classList.remove('selected'));
+    item.classList.add('selected');
+}
+
+function startSelectedGame() {
+    const sets = getGameWordSets();
+    const set = sets.find(s => s.id === selectedGameSetId);
+    
+    if (!set || !set.words.trim()) {
+        alert('Please select a set that contains words!');
+        return;
+    }
+
+    // Update last used
+    set.lastUsed = Date.now();
+    saveGameWordSets(sets);
+
+    // Prep words
+    const wordList = set.words.split(',').map(w => w.trim()).filter(w => w);
+    
+    const wordSet = {
+        title: set.name,
+        words: wordList,
+        sampleSize: wordList.length
+    };
+
+    dom.gameSetSelectModal.classList.add('hidden');
+    uiManager.showView('game');
+    gameManager.start(wordSet, { gridSize: [4, 3] });
+    renderGameGrid();
 }
 
 // Initialize the application

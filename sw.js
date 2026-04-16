@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reading-helper-cache-v6';
+const CACHE_NAME = 'reading-helper-cache-v7';
 // App Shell - the core files for the app's functionality
 const appShellFiles = [
     './',
@@ -43,8 +43,16 @@ self.addEventListener('install', (event) => {
             const imageRegex = /\[IMAGE:\s*(.*?)\s*\]/g;
 
             for (const story of stories) {
-                const storyTextResponse = await fetch(`./${story.path}story.txt`);
-                const storyText = await storyTextResponse.text();
+                let storyText = "";
+                try {
+                    const storyTextResponse = await fetch(`./${story.path}story.txt`);
+                    if (storyTextResponse.ok) {
+                        storyText = await storyTextResponse.text();
+                    }
+                } catch (e) {
+                    console.warn(`Could not fetch story text for ${story.path} during cache-fill.`);
+                }
+                
                 let match;
                 while ((match = imageRegex.exec(storyText)) !== null) {
                     const imagePath = match[1].trim();
