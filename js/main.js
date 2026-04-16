@@ -65,11 +65,11 @@ const dom = {
     celebScore: document.getElementById('celeb-score'),
     celebTime: document.getElementById('celeb-time'),
     celebErrors: document.getElementById('celeb-errors'),
+    celebPlayAgainBtn: document.getElementById('celeb-play-again-btn'),
     celebDoneBtn: document.getElementById('celeb-done-btn'),
     // Game View
     gameView: document.getElementById('game-view'),
     gameGrid: document.getElementById('game-grid'),
-    gameTargetWord: document.getElementById('game-target-word'),
     gameTimer: document.getElementById('game-timer'),
     gameRemainingCount: document.getElementById('game-remaining-count'),
     gameRepeatBtn: document.getElementById('game-repeat-btn'),
@@ -97,6 +97,7 @@ let currentStoryId = null; // Holds the ID of the currently loaded user story
 let sessionImages = {}; // Holds Base64 images for the current session
 let isPeerConnected = false;
 let selectedGameSetId = null; // Currently selected set in the picker
+let gameTimerInterval = null; // Tracks the interval for the ticking game timer
 
 /**
  * Shared reference for the live preview listener to allow proper cleanup.
@@ -121,6 +122,11 @@ const gameManager = new GameManager({
     toastManager,
     speakFn: (word) => speakText(word),
     onGameOver: (score, time, errors) => {
+        if (gameTimerInterval) {
+            clearInterval(gameTimerInterval);
+            gameTimerInterval = null;
+        }
+        
         setTimeout(() => {
             renderGameGrid();
             speakText("Amazing job! You finished the game!");
@@ -143,8 +149,10 @@ function renderGameGrid() {
         `;
     }).join('');
     
-    if (dom.gameTargetWord) dom.gameTargetWord.textContent = gameManager.state.targetWord || '...';
-    if (dom.gameRemainingCount) dom.gameRemainingCount.textContent = gameManager.state.wordPool.length;
+    if (dom.gameRemainingCount) {
+        const totalRemaining = gameManager.state.wordPool.length + gameManager.state.gridWords.filter(w => w !== null).length;
+        dom.gameRemainingCount.textContent = totalRemaining;
+    }
 }
 
 
@@ -309,6 +317,10 @@ function setupEventListeners() {
         { element: dom.celebDoneBtn, event: 'click', handler: () => {
             dom.celebrationModal.classList.add('hidden');
             uiManager.showView('reader');
+        }},
+        { element: dom.celebPlayAgainBtn, event: 'click', handler: () => {
+            dom.celebrationModal.classList.add('hidden');
+            startSelectedGame();
         }},
     ];
 
@@ -767,6 +779,32 @@ function speakText(textToSpeak, elementToHighlight = null) {
     setTimeout(() => {
         window.speechSynthesis.speak(currentUtterance);
     }, 50);
+}
+
+/**
+ * Plays a procedural beep for game interaction using the Web Audio API.
+ */
+function playGameSound(frequency, duration, type = 'sine') {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.type = type;
+        oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+        
+        // Simple volume envelope to avoid clicking sounds
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + duration);
+        
+        setTimeout(() => audioCtx.close(), duration * 1000 + 100);
+    } catch (e) { /* Audio fallback */ }
 }
 
 /**
@@ -1724,6 +1762,16 @@ function startSelectedGame() {
     uiManager.showView('game');
     gameManager.start(wordSet, { gridSize: [4, 3] });
     renderGameGrid();
+
+    // Start the UI timer display
+    if (gameTimerInterval) clearInterval(gameTimerInterval);
+    dom.gameTimer.textContent = '0s';
+    gameTimerInterval = setInterval(() => {
+        if (gameManager.state.active && dom.gameTimer) {
+            const elapsed = Math.floor((Date.now() - gameManager.state.startTime) / 1000);
+            dom.gameTimer.textContent = `${elapsed}s`;
+        }
+    }, 1000);
 }
 
 // Initialize the application

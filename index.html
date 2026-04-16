@@ -162,7 +162,6 @@
 
         <div id="game-view" class="hidden">
             <div class="game-stats">
-                <div>Find: <span id="game-target-word">...</span></div>
                 <div>Time: <span id="game-timer">0s</span></div>
                 <div>Left: <span id="game-remaining-count">0</span></div>
             </div>
@@ -242,7 +241,10 @@
                     <div class="celeb-stat">Time: <span id="celeb-time">0s</span></div>
                     <div class="celeb-stat">Errors: <span id="celeb-errors">0</span></div>
                 </div>
-                <button id="celeb-done-btn" class="theme-button large">Back to Stories</button>
+                <div class="celebration-buttons" style="display: flex; gap: 12px;">
+                    <button id="celeb-play-again-btn" class="theme-button large">Play Again!</button>
+                    <button id="celeb-done-btn" class="theme-button large secondary">Done</button>
+                </div>
             </div>
         </div>
     </div>

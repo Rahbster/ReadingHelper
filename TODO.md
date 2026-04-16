@@ -8,6 +8,10 @@
 - **Local Storage**: Stories are saved and retrieved correctly using the `story-manager.js`.
 - **PWA & Offline**: Service worker is configured to cache the app shell and local story assets.
 - **P2P Sharing**: PeerJS integration allows for direct device-to-device story transfers.
+- **Word Match Game**: Core game loop, scoring, and auditory-only mode (visual target removed) are complete.
+- **Game Word Sets**: Management UI in Dashboard and selection modal are fully functional.
+- **Visual Celebrations**: Canvas-based firework system with procedural audio and haptics.
+- **Speech Clarity**: Specialized enunciation for short words and improved voice selection filtering.
 
 ### AI Integration
 - **Refactored Architecture**: AI logic is isolated in `js/ai-manager.js`.
@@ -20,16 +24,15 @@
 - **Interactive AI Controls**: Added "Generate Now" and "Retry" buttons to manage image queues within Creator Mode.
 - **Metadata Persistence**: `aiImageMetadata` is correctly bundled and rehydrated during the save/load cycle.
 - **Quick Chat**: Integrated a peer-to-peer chat system (`ChatManager.js`) for enhanced communication during story sharing.
+- **Manual Updates**: "Check for Updates" button in sidenav triggers service worker refresh.
 
 ### Infrastructure & Cleanup
 - **Variable Scoping**: Verified consistency between `main.js` and `ai-manager.js`. Removed unused `generatedImageCache`.
 - **Error Handling**: Replace technical 404/503 errors with child-friendly "AI is drawing..." or "AI is resting" messages in Reader Mode.
 
 ## ❌ What Needs Work
-
-### UX & Performance
-- **Asset Lazy Loading**: Improve initial render speed for long stories containing many AI-generated images.
-- **Haptic Feedback**: Add mobile-friendly haptics for word interaction and long-press triggers.
+### AI Refinement
+- **Style Continuity**: Investigate using consistent seeds in Pollinations.ai to maintain visual character consistency across a single story.
 
 ### AI Refinement
 - **Style Continuity**: Investigate using consistent seeds in Pollinations.ai to maintain visual character consistency across a single story.
