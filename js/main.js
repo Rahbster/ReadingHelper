@@ -47,6 +47,7 @@ const dom = {
     apiKeyStatus: document.getElementById('api-key-status'),
     testApiKeyBtn: document.getElementById('test-api-key-btn'),
     getApiKeyHelpBtn: document.getElementById('get-api-key-help-btn'),
+    checkUpdatesBtn: document.getElementById('check-updates-btn'),
     // Chat
     btnOpenChat: document.getElementById('btn-open-chat'),
     chatModal: document.getElementById('chat-modal'),
@@ -188,6 +189,32 @@ async function resetApplication() {
 }
 
 /**
+ * Manually triggers a service worker update check.
+ */
+async function checkForUpdates() {
+    uiManager.closeNav();
+    if (!navigator.serviceWorker) {
+        toastManager.show('Service workers are not supported.', 'error');
+        return;
+    }
+
+    try {
+        const registration = await navigator.serviceWorker.ready;
+        toastManager.show('Checking for updates...', 'info');
+        await registration.update();
+        
+        setTimeout(() => {
+            if (!registration.installing && !registration.waiting) {
+                toastManager.show('Your app is up to date!', 'success');
+            }
+        }, 1500);
+    } catch (error) {
+        console.error('Manual update check failed:', error);
+        toastManager.show('Failed to check for updates.', 'error');
+    }
+}
+
+/**
  * Registers the service worker and handles updates.
  */
 async function setupServiceWorker() {
@@ -277,6 +304,7 @@ function setupEventListeners() {
         { element: dom.gameSetEditorList, event: 'click', handler: handleGameSetEditorAction },
         { element: dom.gameSetEditorList, event: 'change', handler: saveGameSetFromUI },
         { element: dom.testApiKeyBtn, event: 'click', handler: testGeminiConnection },
+        { element: dom.checkUpdatesBtn, event: 'click', handler: checkForUpdates },
         { element: dom.gameRepeatBtn, event: 'click', handler: () => speakText(gameManager.state.targetWord) },
         { element: dom.celebDoneBtn, event: 'click', handler: () => {
             dom.celebrationModal.classList.add('hidden');

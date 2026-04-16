@@ -5,6 +5,7 @@
   "description": "An interactive reading assistant.",
   "start_url": "./index.html",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#F0F8FF",
   "theme_color": "#A9C9FF",
   "icons": [
@@ -19,6 +20,36 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    }
+  ],
+  "categories": ["education", "books", "kids"],
+  "shortcuts": [
+    {
+      "name": "Play Game",
+      "short_name": "Game",
+      "description": "Start the Word Match game",
+      "url": "./index.html?mode=game",
+      "icons": [{ "src": "icons/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Dashboard",
+      "short_name": "Stats",
+      "description": "View tricky words and manage sets",
+      "url": "./index.html?mode=dashboard",
+      "icons": [{ "src": "icons/icon-192x192.png", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "icons/screenshot-desktop.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "icons/screenshot-mobile.png",
+      "sizes": "750x1334",
+      "type": "image/png"
     }
   ]
 }
