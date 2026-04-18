@@ -109,6 +109,7 @@ let storyWordElements = [];
 let lastProcessedTranscript = ""; // Tracks already-processed text from the current speech segment
 let isReadingAlong = false;
 let currentReadAlongIndex = 0;
+let lastHighlightedReadAlongElement = null;
 let readingRate = 1.0;
 let isReadAlongPaused = false;
 let readAlongSessionId = 0;
@@ -393,9 +394,16 @@ async function runFluidRead(sessionId) {
         
         if (event.name === 'word') {
             const absoluteCharIndex = event.charIndex + startChar;
-            const wordIdx = storyWordElements.findIndex(el => {
-                return absoluteCharIndex >= parseInt(el.dataset.start) && absoluteCharIndex < parseInt(el.dataset.end);
-            });
+            
+            // Optimized search: start looking from the current index forward
+            let wordIdx = -1;
+            for (let i = currentReadAlongIndex; i < storyWordElements.length; i++) {
+                const el = storyWordElements[i];
+                if (absoluteCharIndex >= parseInt(el.dataset.start) && absoluteCharIndex < parseInt(el.dataset.end)) {
+                    wordIdx = i;
+                    break;
+                }
+            }
 
             if (wordIdx !== -1) {
                 currentReadAlongIndex = wordIdx;
@@ -411,9 +419,15 @@ async function runFluidRead(sessionId) {
 
 function highlightReadAlongWord(index) {
     const el = storyWordElements[index];
-    if (!el) return;
-    storyWordElements.forEach(item => item.classList.remove('read-along-highlight'));
+    if (!el || el === lastHighlightedReadAlongElement) return;
+
+    // Optimized: Only remove highlight from the previously active element
+    if (lastHighlightedReadAlongElement) {
+        lastHighlightedReadAlongElement.classList.remove('read-along-highlight');
+    }
+    
     el.classList.add('read-along-highlight');
+    lastHighlightedReadAlongElement = el;
     scrollToWord(el);
 }
 
@@ -422,7 +436,14 @@ function highlightReadAlongWord(index) {
  */
 function scrollToWord(el) {
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // Only scroll if the element is not clearly visible to reduce iPad jitter
+    const rect = el.getBoundingClientRect();
+    const isVisible = (rect.top >= 0 && rect.bottom <= window.innerHeight);
+    
+    if (!isVisible) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
 }
 
 /**
@@ -455,7 +476,10 @@ function handleReadAlongEnd() {
         btnReadAlong.classList.remove('speaking');
         btnReadAlong.querySelector('span').textContent = "🔊 Story Teller";
     }
-    storyWordElements.forEach(el => el.classList.remove('read-along-highlight'));
+    if (lastHighlightedReadAlongElement) {
+        lastHighlightedReadAlongElement.classList.remove('read-along-highlight');
+        lastHighlightedReadAlongElement = null;
+    }
 }
 
 function toggleReadAloud() {
