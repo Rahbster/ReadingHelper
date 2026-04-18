@@ -40,6 +40,13 @@
     gap: 10px;
 }
 
+.sidenav-item-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9em;
+}
+
 .sidenav-divider {
     margin: 10px 20px;
     border: 0;

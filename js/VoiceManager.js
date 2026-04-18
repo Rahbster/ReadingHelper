@@ -8,6 +8,14 @@ export const VOICE_PREF_KEY = 'readingHelperSelectedVoice';
 let currentlySpeakingElement = null;
 let currentUtterance = null;
 
+const HIGH_QUALITY_MARKERS = ['Natural', 'Google', 'Premium', 'Enhanced', 'Siri'];
+
+/**
+ * Helper to identify high-quality voices across different platforms.
+ * @param {SpeechSynthesisVoice} v 
+ */
+const isHighQuality = (v) => HIGH_QUALITY_MARKERS.some(marker => v.name.includes(marker));
+
 /**
  * Warms up the speech engine to satisfy browser interaction requirements.
  */
@@ -43,10 +51,8 @@ export function speakText(textToSpeak, elementToHighlight = null) {
     if (voices.length === 0) voices = window.speechSynthesis.getVoices();
 
     const savedVoiceName = localStorage.getItem(VOICE_PREF_KEY);
-    const isUS = (v) => v.lang.toLowerCase().replace('_', '-') === 'en-us';
+    const isUS = (v) => v.lang.toLowerCase().replace('_', '-').startsWith('en-us');
     const isEnglish = (v) => v.lang.toLowerCase().startsWith('en');
-    // Look for high-quality markers across Windows (Natural), Chrome (Google), and Apple (Premium/Enhanced/Siri)
-    const isHighQuality = (v) => v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Premium') || v.name.includes('Enhanced') || v.name.includes('Siri');
 
     const preferredVoice = 
         voices.find(v => v.name === savedVoiceName)
@@ -57,6 +63,7 @@ export function speakText(textToSpeak, elementToHighlight = null) {
     
     if (preferredVoice) {
         currentUtterance.voice = preferredVoice;
+        currentUtterance.lang = preferredVoice.lang;
     }
 
     currentUtterance.rate = textToSpeak.length <= 4 ? 0.55 : 0.75;
@@ -93,24 +100,35 @@ export function speakText(textToSpeak, elementToHighlight = null) {
 /**
  * Populates a select element with available high-quality English voices.
  */
-export function populateVoiceList(selectElement) {
+export function populateVoiceList(selectElement, showAll = false) {
     if (!selectElement || !('speechSynthesis' in window)) return;
 
-    const voices = window.speechSynthesis.getVoices();
-    const savedVoiceName = localStorage.getItem(VOICE_PREF_KEY);
+    // Some browsers return an empty list on the first call; 
+    // calling it twice or waiting for the event is necessary.
+    let voices = window.speechSynthesis.getVoices();
+    if (voices.length === 0) voices = window.speechSynthesis.getVoices();
 
-    const englishVoices = voices.filter(v => v.lang.toLowerCase().startsWith('en'))
+    const savedVoiceName = localStorage.getItem(VOICE_PREF_KEY);
+    const seenNames = new Set();
+
+    const displayVoices = voices.filter(v => {
+                                    if (seenNames.has(v.name)) return false;
+                                    seenNames.add(v.name);
+                                    
+                                    if (showAll) return true;
+                                    return v.lang.toLowerCase().startsWith('en');
+                                })
                                 .sort((a, b) => {
-                                    const aHigh = a.name.includes('Natural') || a.name.includes('Google') || a.name.includes('Premium') || a.name.includes('Enhanced') || a.name.includes('Siri');
-                                    const bHigh = b.name.includes('Natural') || b.name.includes('Google') || b.name.includes('Premium') || b.name.includes('Enhanced') || b.name.includes('Siri');
+                                    const aHigh = isHighQuality(a);
+                                    const bHigh = isHighQuality(b);
                                     if (aHigh && !bHigh) return -1;
                                     if (!aHigh && bHigh) return 1;
                                     return a.name.localeCompare(b.name);
                                 });
 
     let html = `<option value="" ${!savedVoiceName ? 'selected' : ''}>-- Use Best Default --</option>`;
-    if (englishVoices.length > 0) {
-        html += englishVoices.map(voice => {
+    if (displayVoices.length > 0) {
+        html += displayVoices.map(voice => {
             const isSelected = voice.name === savedVoiceName ? 'selected' : '';
             return `<option value="${voice.name}" ${isSelected}>${voice.name} (${voice.lang})</option>`;
         }).join('');

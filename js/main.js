@@ -47,6 +47,7 @@ const dom = {
     settingsNameInput: document.getElementById('settings-name'),
     googleApiKeyInput: document.getElementById('settings-google-api-key'),
     apiKeyStatus: document.getElementById('api-key-status'),
+    showAllVoicesToggle: document.getElementById('settings-show-all-voices'),
     testApiKeyBtn: document.getElementById('test-api-key-btn'),
     settingsVoiceSelection: document.getElementById('settings-voice-selection'),
     getApiKeyHelpBtn: document.getElementById('get-api-key-help-btn'),
@@ -247,7 +248,7 @@ async function init() {
     setupEventListeners();
     renderDashboard();
     GameUI.renderGameSetEditor();
-    VoiceManager.populateVoiceList(dom.settingsVoiceSelection);
+    VoiceManager.populateVoiceList(dom.settingsVoiceSelection, dom.showAllVoicesToggle?.checked);
     performStorageMaintenance();
 
     // Handle PWA Shortcuts/URL parameters
@@ -313,6 +314,9 @@ function setupEventListeners() {
                 const randomPhrase = funPhrases[Math.floor(Math.random() * funPhrases.length)];
                 VoiceManager.speakText(randomPhrase);
             }
+        }},
+        { element: dom.showAllVoicesToggle, event: 'change', handler: (e) => {
+            VoiceManager.populateVoiceList(dom.settingsVoiceSelection, e.target.checked);
         }},
         { element: dom.gameSetSelectList, event: 'click', handler: (e) => GameUI.handleGameSetSelection(e) },
         { element: dom.confirmGameStartBtn, event: 'click', handler: () => GameUI.startSelectedGame() },
@@ -1463,7 +1467,7 @@ if ('speechSynthesis' in window) {
     if (speechSynthesis.onvoiceschanged !== undefined) {
         speechSynthesis.onvoiceschanged = () => {
             window.speechSynthesis.getVoices();
-            VoiceManager.populateVoiceList(dom.settingsVoiceSelection);
+            VoiceManager.populateVoiceList(dom.settingsVoiceSelection, dom.showAllVoicesToggle?.checked);
         };
     }
 }
