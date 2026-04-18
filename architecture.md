@@ -13,6 +13,7 @@ The application follows a modular monolith structure on the frontend, breaking d
 *   **`js/GameUI.js`**: Handles the visual rendering of the game. Includes logic for orientation-aware grid layouts (3x4 vs 4x3) and canvas-based particle celebrations.
 *   **`js/main.js`**: The main entry point. It orchestrates the story rendering, word tracking, speech synthesis triggers, and syllable heuristic algorithms.
 *   **`js/GameManager.js`**: Pure logic class that manages the state of the Word Match game, including word pooling, shuffling, scoring, and target selection.
+*   **`js/SpeechRecognitionManager.js`**: Manages the Web Speech API's `SpeechRecognition` interface, handling auto-restart for mobile stability and transcript processing.
 *   **`js/UIManager.js`**: Manages all non-essential UI DOM interactions, including toggling modals, handling the sidebar navigation, updating settings, and toggling themes.
 
 ### Data & Persistence Layer
@@ -31,8 +32,9 @@ The application follows a modular monolith structure on the frontend, breaking d
     *   The manager keeps track of generated image metadata across a session (pending, success, failing status) and injects retry logic dynamically into the UI.
 
 ### Audio & Feedback Layer
-*   **Web Speech API**: Used for word enunciation. `main.js` includes a prioritized filtering system for high-quality English voices.
-*   **Web Audio API**: Generates procedural beeps and tones for game feedback without requiring external asset files.
+*   **Web Speech API (TTS)**: Powers the "Story Teller" mode. Supports fluid reading, real-time speed adjustments (0.8x - 2.0x), and pause/resume functionality. Includes a prioritized filtering system for high-quality English voices.
+*   **Web Speech API (STT)**: Powers "Karaoke Mode". Uses sequential word matching with a "Reading Pointer", supporting fuzzy logic for skips, backtracking for corrections, and misspoken word detection.
+*   **Web Audio API**: Generates procedural beeps, tones, and celebratory sounds for game feedback without requiring external asset files.
 *   **Haptic API**: Provides vibration feedback for mobile users during game interactions.
 
 ### Offline & PWA Capabilities

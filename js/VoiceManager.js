@@ -31,10 +31,14 @@ export function warmUp() {
  * Uses the Web Speech API to read text aloud.
  * @param {string} textToSpeak - The text to be spoken.
  * @param {HTMLElement} [elementToHighlight] - Optional element to highlight during speech.
+ * @param {Function} [onBoundary] - Optional callback for speech boundaries (receives event).
+ * @param {number} [rate=1.0] - The base reading speed.
  */
-export function speakText(textToSpeak, elementToHighlight = null) {
+export function speakText(textToSpeak, elementToHighlight = null, onBoundary = null, rate = 1.0) {
+    return new Promise((resolve) => {
     if (!('speechSynthesis' in window)) {
         console.warn('Speech synthesis not supported in this browser.');
+        resolve();
         return;
     }
 
@@ -66,7 +70,12 @@ export function speakText(textToSpeak, elementToHighlight = null) {
         currentUtterance.lang = preferredVoice.lang;
     }
 
-    currentUtterance.rate = textToSpeak.length <= 4 ? 0.90 : 1.0;
+    if (onBoundary) {
+        currentUtterance.onboundary = onBoundary;
+    }
+
+    const lengthFactor = textToSpeak.length <= 4 ? 0.90 : 1.0;
+    currentUtterance.rate = Math.max(0.8, rate * lengthFactor);
     currentUtterance.pitch = textToSpeak.length <= 4 ? 1.05 : 1.0;
     currentUtterance.volume = 1.0;
 
@@ -82,6 +91,7 @@ export function speakText(textToSpeak, elementToHighlight = null) {
             currentlySpeakingElement = null;
         }
         currentUtterance = null;
+        resolve();
     };
 
     currentUtterance.onerror = (event) => {
@@ -89,11 +99,13 @@ export function speakText(textToSpeak, elementToHighlight = null) {
         if (currentlySpeakingElement) {
             currentlySpeakingElement.classList.remove('speaking');
         }
+        resolve();
     };
 
     setTimeout(() => {
         window.speechSynthesis.speak(currentUtterance);
     }, 50);
+    });
 }
 
 /**

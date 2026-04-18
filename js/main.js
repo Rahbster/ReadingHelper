@@ -7,6 +7,7 @@ import * as aiManager from './ai-manager.js';
 import { UIManager } from './UIManager.js';
 import { GameManager } from './GameManager.js';
 import * as VoiceManager from './VoiceManager.js';
+import { SpeechRecognitionManager } from './SpeechRecognitionManager.js';
 import * as GameUI from './GameUI.js';
 
 const dom = {
@@ -79,8 +80,12 @@ const dom = {
     btnGameMode: document.getElementById('btn-game-mode'),
 };
 
+let btnReadAloud = null; // Will be created or referenced if exists
+let btnReadAlong = null; 
+
 const toastManager = new ToastManager();
 const WORD_STATS_KEY = 'readingHelperWordStats';
+const SPEED_PREF_KEY = 'readingHelperReadingSpeed';
 let currentPronunciations = {}; // Holds the pronunciation guide for the currently loaded story
 let currentStoryPath = '';      // Holds the base path for the current story module
 let currentPhonetics = {};      // Holds the phonetic guide for the currently loaded story
@@ -96,6 +101,18 @@ let isCreatorMode = false;
 let currentStoryId = null; // Holds the ID of the currently loaded user story
 let sessionImages = {}; // Holds Base64 images for the current session
 let isPeerConnected = false;
+
+// Read Aloud State
+let sttManager = null;
+let readingPointer = 0;
+let storyWordElements = [];
+let lastProcessedTranscript = ""; // Tracks already-processed text from the current speech segment
+let isReadingAlong = false;
+let currentReadAlongIndex = 0;
+let readingRate = 1.0;
+let isReadAlongPaused = false;
+let readAlongSessionId = 0;
+let speedUpdateTimeout = null;
 
 /**
  * Shared reference for the live preview listener to allow proper cleanup.
@@ -238,6 +255,12 @@ async function init() {
     uiManager.initTheme();
     loadWordStats();
     setupServiceWorker();
+    
+    sttManager = new SpeechRecognitionManager(handleSpeechResult, handleSpeechStatusChange);
+    injectReadAloudUI();
+    injectReadAlongUI();
+    loadPreferences();
+
     aiManager.init({
         toastManager,
         renderStory,
@@ -258,6 +281,248 @@ async function init() {
     } else if (mode === 'dashboard') {
         uiManager.showView('dashboard');
     }
+}
+
+function updateReadingRate(val) {
+    readingRate = Math.max(0.8, parseFloat(val));
+    localStorage.setItem(SPEED_PREF_KEY, readingRate);
+    
+    // Sync all speed-related UI elements
+    document.querySelectorAll('.speed-slider-input').forEach(el => el.value = readingRate);
+    document.querySelectorAll('.speed-display-val').forEach(el => el.textContent = readingRate.toFixed(1));
+
+    // Update immediately if reading along
+    if (isReadingAlong) {
+        isReadAlongPaused = false; // Resume if speed is changed
+        clearTimeout(speedUpdateTimeout);
+        speedUpdateTimeout = setTimeout(() => {
+            // startReadAlong will increment the sessionId and handle the restart
+            startReadAlong();
+        }, 100);
+    }
+}
+
+function loadPreferences() {
+    const savedSpeed = localStorage.getItem(SPEED_PREF_KEY);
+    if (savedSpeed) {
+        readingRate = Math.max(0.8, parseFloat(savedSpeed));
+    }
+}
+
+/**
+ * Injects the Read Aloud toggle button into the header.
+ */
+function injectReadAloudUI() {
+    if (!sttManager.isSupported()) return;
+
+    const headerButtons = document.querySelector('.header-buttons');
+    btnReadAloud = document.createElement('button');
+    btnReadAloud.id = 'btn-read-aloud';
+    btnReadAloud.className = 'theme-button';
+    btnReadAloud.innerHTML = `<span>🎤 Karaoke Mode</span>`;
+    btnReadAloud.onclick = toggleReadAloud;
+    headerButtons.prepend(btnReadAloud);
+}
+
+/**
+ * Injects the Read Along (Text-to-Speech) button.
+ */
+function injectReadAlongUI() {
+    const headerButtons = document.querySelector('.header-buttons');
+    
+    const container = document.createElement('div');
+    container.className = 'header-speed-control';
+    container.innerHTML = `
+        <label>Speed: <span class="speed-display-val">${readingRate.toFixed(1)}</span>x</label>
+        <input type="range" class="speed-slider-input" min="0.8" max="2.0" step="0.1" value="${readingRate}">
+    `;
+    
+    const slider = container.querySelector('.speed-slider-input');
+    slider.oninput = (e) => updateReadingRate(e.target.value);
+
+    btnReadAlong = document.createElement('button');
+    btnReadAlong.id = 'btn-read-along';
+    btnReadAlong.className = 'theme-button';
+    btnReadAlong.innerHTML = `<span>🔊 Story Teller</span>`;
+    btnReadAlong.onclick = toggleReadAlong;
+    
+    headerButtons.prepend(btnReadAlong);
+    headerButtons.prepend(container);
+}
+
+function toggleReadAlong() {
+    if (isReadingAlong) {
+        if (isReadAlongPaused) {
+            toggleReadAlongPause();
+        } else {
+            window.speechSynthesis.cancel();
+            handleReadAlongEnd();
+        }
+    } else {
+        currentReadAlongIndex = 0;
+        startReadAlong();
+    }
+}
+
+async function startReadAlong() {
+    const text = dom.storyInput.value;
+    if (!text.trim() || storyWordElements.length === 0) return;
+
+    const mySession = ++readAlongSessionId;
+    isReadingAlong = true;
+    isReadAlongPaused = false;
+    btnReadAlong.classList.add('speaking');
+    btnReadAlong.querySelector('span').textContent = "🛑 Stop";
+
+    await runFluidRead(mySession);
+}
+
+/**
+ * Fluid Mode: Used for normal and fast reading.
+ * Reads the entire remaining text in one go for natural coarticulation.
+ */
+async function runFluidRead(sessionId) {
+    const text = dom.storyInput.value;
+    const startWord = storyWordElements[currentReadAlongIndex];
+    const startChar = parseInt(startWord.dataset.start);
+    
+    const speakableText = text.substring(startChar).replace(/\[IMAGE:.*?\]/g, (m) => " ".repeat(m.length));
+
+    await VoiceManager.speakText(speakableText, null, (event) => {
+        if (sessionId !== readAlongSessionId) return;
+        
+        if (event.name === 'word') {
+            const absoluteCharIndex = event.charIndex + startChar;
+            const wordIdx = storyWordElements.findIndex(el => {
+                return absoluteCharIndex >= parseInt(el.dataset.start) && absoluteCharIndex < parseInt(el.dataset.end);
+            });
+
+            if (wordIdx !== -1) {
+                currentReadAlongIndex = wordIdx;
+                highlightReadAlongWord(wordIdx);
+            }
+        }
+    }, readingRate);
+
+    if (sessionId === readAlongSessionId) {
+        handleReadAlongEnd();
+    }
+}
+
+function highlightReadAlongWord(index) {
+    const el = storyWordElements[index];
+    if (!el) return;
+    storyWordElements.forEach(item => item.classList.remove('read-along-highlight'));
+    el.classList.add('read-along-highlight');
+    scrollToWord(el);
+}
+
+/**
+ * Safely scrolls the reader view to center the specific word element.
+ */
+function scrollToWord(el) {
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+/**
+ * Toggles the pause state of the Story Teller.
+ */
+function toggleReadAlongPause() {
+    if (!isReadingAlong) return;
+
+    isReadAlongPaused = !isReadAlongPaused;
+    
+    if (isReadAlongPaused) {
+        window.speechSynthesis.pause();
+        if (btnReadAlong) btnReadAlong.querySelector('span').textContent = "▶️ Resume";
+        toastManager.show('Story Teller paused. Click the story to resume.', 'info', 1500);
+    } else {
+        window.speechSynthesis.resume();
+        if (btnReadAlong) btnReadAlong.querySelector('span').textContent = "🛑 Stop";
+        toastManager.show('Resuming...', 'info', 1000);
+    }
+}
+
+function handleReadAlongEnd() {
+    // Only reset if we actually reached the end
+    if (currentReadAlongIndex >= storyWordElements.length - 1) {
+        currentReadAlongIndex = 0;
+    }
+    isReadingAlong = false;
+    isReadAlongPaused = false;
+    if (btnReadAlong) {
+        btnReadAlong.classList.remove('speaking');
+        btnReadAlong.querySelector('span').textContent = "🔊 Story Teller";
+    }
+    storyWordElements.forEach(el => el.classList.remove('read-along-highlight'));
+}
+
+function toggleReadAloud() {
+    if (sttManager.isActive) {
+        sttManager.stop();
+    } else {
+        lastProcessedTranscript = "";
+        resetReadingPointer();
+        sttManager.start();
+        toastManager.show('Listening... Read the story out loud!', 'info');
+    }
+}
+
+function handleSpeechStatusChange(isActive) {
+    if (btnReadAloud) {
+        btnReadAloud.classList.toggle('speaking', isActive);
+        btnReadAloud.querySelector('span').textContent = isActive ? '🛑 Stop Karaoke' : '🎤 Karaoke Mode';
+    }
+    if (!isActive) lastProcessedTranscript = "";
+    updateActiveHighlight();
+}
+
+/**
+ * Resets the reading progress.
+ */
+function resetReadingPointer() {
+    readingPointer = 0;
+    lastProcessedTranscript = "";
+    storyWordElements.forEach(el => {
+        el.classList.remove('read-correct', 'read-skipped', 'read-help', 'read-active', 'read-misspoken');
+    });
+    updateActiveHighlight();
+}
+
+/**
+ * Updates the visual "next word" highlight.
+ */
+function updateActiveHighlight() {
+    storyWordElements.forEach(el => el.classList.remove('read-active'));
+    if (sttManager && sttManager.isActive && readingPointer < storyWordElements.length) {
+        const nextWord = storyWordElements[readingPointer];
+        nextWord.classList.add('read-active');
+        scrollToWord(nextWord);
+    }
+}
+
+/**
+ * Marks a word with a specific status class.
+ */
+function markWord(index, status) {
+    const el = storyWordElements[index];
+    if (!el) return;
+    
+    // Remove conflicting states
+    el.classList.remove('read-correct', 'read-skipped', 'read-misspoken', 'read-help');
+    
+    if (status === 'correct') el.classList.add('read-correct');
+    if (status === 'skipped') el.classList.add('read-skipped');
+    if (status === 'misspoken') el.classList.add('read-misspoken');
+}
+
+/**
+ * Normalizes text for fuzzy matching (lowercase, no punctuation).
+ * @param {string} text 
+ */
+function cleanText(text) {
+    return text.toLowerCase().replace(/[.,!?;:"()]/g, '').trim();
 }
 
 /**
@@ -368,6 +633,12 @@ function setupEventListeners() {
     dom.storyDisplay.addEventListener('click', (e) => {
         if (e.target.classList.contains('retry-image-btn')) {
             aiManager.retryGeneration(e.target.dataset.filename, sessionImages, localImageUrls);
+        }
+        
+        // If the user clicks the story area while reading, toggle pause.
+        // We check for !activeWordElement here to avoid double-toggling if they clicked a specific word.
+        if (isReadingAlong && !e.target.closest('.speakable-word')) {
+            toggleReadAlongPause();
         }
     });
 
@@ -553,12 +824,17 @@ async function insertMagicImageAtCursor() {
 function renderStory() {
     const text = dom.storyInput.value; // We still use storyInput as the source of truth
     const aiMetadata = aiManager.getMetadata();
+    storyWordElements = [];
+    let currentPos = 0;
 
     // Split by spaces and punctuation, but keep them for rendering.
     // This regex splits on spaces, newlines, and common punctuation.
     const parts = text.split(/(\[IMAGE:.*?\]|[ \n.,!?;:"()])/);
     const html = parts.map(part => {
         if (!part) return '';
+
+        const start = currentPos;
+        currentPos += part.length;
 
         // Check for our custom image tag
         const imageMatch = part.match(/^\[IMAGE:(.*?)\]$/);
@@ -630,7 +906,12 @@ function renderStory() {
 
         // Check if the part is a word (contains letters)
         if (/[a-zA-Z']/.test(part) && /[a-zA-Z]/.test(part)) { // Must contain letters, can contain apostrophes
-            return `<span class="speakable-word">${part}</span>`;
+            const span = document.createElement('span');
+            span.className = 'speakable-word';
+            span.textContent = part;
+            span.dataset.start = start;
+            span.dataset.end = start + part.length;
+            return span.outerHTML;
         } else {
             // It's whitespace or punctuation, return as is.
             return part;
@@ -638,6 +919,89 @@ function renderStory() {
     }).join('');
 
     dom.storyDisplay.innerHTML = html;
+    // Map the spans back to an array for the reading pointer
+    storyWordElements = Array.from(dom.storyDisplay.querySelectorAll('.speakable-word'));
+    updateActiveHighlight();
+}
+
+/**
+ * Core logic for the Sequential Word Matching.
+ */
+function handleSpeechResult({ final, interim }) {
+    const transcript = (final || interim).toLowerCase();
+    if (!transcript || readingPointer >= storyWordElements.length) return;
+
+    // Only process the part of the transcript we haven't seen yet in this segment
+    let newPart = transcript;
+    if (transcript.startsWith(lastProcessedTranscript)) {
+        newPart = transcript.substring(lastProcessedTranscript.length).trim();
+    }
+    
+    if (final) {
+        lastProcessedTranscript = ""; // Reset for next sentence
+    } else {
+        lastProcessedTranscript = transcript;
+    }
+
+    if (!newPart) return;
+
+    const spokenWords = newPart.split(/\s+/);
+    
+    spokenWords.forEach(spoken => {
+        const cleanedSpoken = cleanText(spoken);
+        if (!cleanedSpoken) return;
+
+        // 1. Check current word (Success)
+        const currentExpected = cleanText(storyWordElements[readingPointer].textContent);
+        if (cleanedSpoken === currentExpected) {
+            markWord(readingPointer, 'correct');
+            readingPointer++;
+            updateActiveHighlight();
+            return;
+        }
+
+        // 2. Check Backtracking (Correction window: 3 words back)
+        const backLimit = Math.max(0, readingPointer - 3);
+        for (let i = readingPointer - 1; i >= backLimit; i--) {
+            if (cleanedSpoken === cleanText(storyWordElements[i].textContent)) {
+                markWord(i, 'correct');
+                // Clear error/skipped marks for everything we just "re-read"
+                for (let j = i + 1; j < readingPointer; j++) {
+                    storyWordElements[j].classList.remove('read-correct', 'read-skipped', 'read-misspoken');
+                }
+                readingPointer = i + 1;
+                updateActiveHighlight();
+                return;
+            }
+        }
+
+        // 3. Check Look Ahead (Skipping window: 5 words ahead)
+        const forwardLimit = Math.min(readingPointer + 5, storyWordElements.length);
+        for (let i = readingPointer + 1; i < forwardLimit; i++) {
+            if (cleanedSpoken === cleanText(storyWordElements[i].textContent)) {
+                // User skipped some words
+                for (let j = readingPointer; j < i; j++) {
+                    markWord(j, 'skipped');
+                }
+                markWord(i, 'correct');
+                readingPointer = i + 1;
+                updateActiveHighlight();
+                return;
+            }
+        }
+
+        // 4. If we are here, the word didn't match current, back, or forward.
+        // It is likely a misspoken word at the current pointer.
+        markWord(readingPointer, 'misspoken');
+    });
+
+    // If the user finished the story
+    if (readingPointer === storyWordElements.length && final) {
+        sttManager.stop();
+        setTimeout(() => {
+            VoiceManager.speakText("You read the whole story! Well done!");
+        }, 500);
+    }
 }
 
 /**
@@ -696,16 +1060,25 @@ function getSyllables(word) {
 function speakWordFromStory(text) {
     const lowerCaseText = text.toLowerCase();
     let textToSpeak = text;
+    
+    const tappedIndex = storyWordElements.indexOf(activeWordElement);
 
     // Check if there's a pronunciation override for this word.
     if (currentPronunciations[lowerCaseText]) {
         textToSpeak = currentPronunciations[lowerCaseText];
     }
     
-    // Find the element to highlight
     const elementToHighlight = activeWordElement;
 
-    VoiceManager.speakText(textToSpeak, elementToHighlight);
+    // Integration with Reading Pointer: If they tap a word for help, mark it.
+    if (sttManager && sttManager.isActive && activeWordElement) {
+        markWord(tappedIndex, 'help');
+        // Advance the pointer to the word immediately after the one they needed help with
+        readingPointer = tappedIndex + 1;
+        updateActiveHighlight();
+    }
+
+    VoiceManager.speakText(textToSpeak, elementToHighlight, null, readingRate);
 }
 
 /**
@@ -1212,9 +1585,13 @@ function handlePressEnd(event) {
     } 
     // If it was a short press AND the press started on a valid word element, process it as a tap.
     else if (wasShortPress && activeWordElement) { // This correctly identifies a tap
+        if (isReadingAlong) {
+            toggleReadAlongPause();
+        } else {
         const word = activeWordElement.textContent.trim().toLowerCase();
         speakWordFromStory(word);
         trackWord(word);
+        }
     }
 
     activeWordElement = null; // Reset the active element

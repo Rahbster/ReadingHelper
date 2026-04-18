@@ -10,6 +10,8 @@ This project was created to provide a personalized and interactive reading tool 
 
 *   **Word Match Game:** A fun, interactive flashcard game designed for auditory recognition. Features "Tricky Pairs" support to help children distinguish between similar-sounding or similar-looking words (e.g., "tree" vs "three").
 *   **Customizable Word Sets:** Parents can create and manage specific lists of words (e.g., "Week 1", "Sight Words") via the Dashboard to target specific learning goals.
+*   **Karaoke Mode (Read Aloud):** The child can read the story to the computer. The app tracks progress word-by-word, marking correct words in green, skipped words in red, and allowing for natural corrections and backtracking.
+*   **Story Teller (Read Along):** The computer reads the story to the child with real-time word highlighting. Features include adjustable reading speed (0.8x - 2.0x) and the ability to pause/resume by tapping the story.
 *   **Dynamic Game Layouts:** The game automatically adjusts between a 3x4 grid (portrait) and a 4x3 grid (landscape) to maximize screen space on iPhones, iPads, and desktops.
 *   **Adaptive Text Scaling:** Flashcards use CSS Container Queries to ensure word text dynamically fills the available card space, remaining legible on all device sizes.
 *   **Victory Celebrations:** Completing a game triggers a celebratory firework show using the words the child just mastered, providing positive reinforcement.

@@ -4,8 +4,12 @@
 
 ### Core Application
 - **Interactive Reader**: Tap-to-speak and syllable breakdown popups are fully functional.
-- **Creator Mode**: Users can write stories, add phonetic guides, and manually upload images.
-- **Local Storage**: Stories are saved and retrieved correctly using the `story-manager.js`.
+- **Karaoke Mode (Speech-to-Text)**: Sequential word matching, fuzzy skipping logic, backtracking for corrections, and mobile auto-restart implemented.
+- **Story Teller (Text-to-Speech)**: Fluid reading of full stories with word-level highlighting and synchronization.
+- **Interaction Control**: Pause/Resume functionality by clicking the story area during computer read-back.
+- **Dynamic Speed Control**: Real-time reading speed slider (0.8x floor) integrated directly into the header.
+- **Creator Mode**: Users can write stories, add phonetic guides, and manually upload or AI-generate illustrations.
+- **Asset Persistence**: Large AI-generated images are stored in **IndexedDB** to bypass `localStorage` size limits.
 - **PWA & Offline**: Service worker is configured to cache the app shell and local story assets.
 - **P2P Sharing**: PeerJS integration allows for direct device-to-device story transfers.
 - **Word Match Game**: Core game loop, scoring, auditory-only mode, and **Minimal Pairs (distractor map)** support are complete.
@@ -15,6 +19,7 @@
 - **Responsive Game Layout**: Dynamic grid switching (3x4/4x3) and `100dvh` viewport handling.
 - **Adaptive Font Scaling**: Card text scaling using CSS Container Queries (`cqmin`).
 - **Unified Touch Interaction**: Migration to Pointer Events for consistent behavior across iPad, iPhone, and Desktop.
+- **Auto-Scrolling**: Smooth page-level scrolling that centers the active word during Story Teller and Karaoke sessions.
 
 ### AI Integration
 - **Refactored Architecture**: AI logic is isolated in `js/ai-manager.js`.
@@ -32,6 +37,7 @@
 ### Infrastructure & Cleanup
 - **Variable Scoping**: Verified consistency between `main.js` and `ai-manager.js`. Removed unused `generatedImageCache`.
 - **Error Handling**: Replace technical 404/503 errors with child-friendly "AI is drawing..." or "AI is resting" messages in Reader Mode.
+- **Storage Maintenance**: Automated cleanup utility (`cleanupOrphanedImages`) removes unused binary assets from IndexedDB.
 
 ## ❌ What Needs Work
 ### AI Refinement

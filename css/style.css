@@ -231,6 +231,104 @@ header h1 {
     color: white !important;
 }
 
+@keyframes pulse-listening {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 var(--primary-color);
+    }
+    70% {
+        transform: scale(1.05);
+        box-shadow: 0 0 0 10px transparent;
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 transparent;
+    }
+}
+
+#btn-read-aloud.speaking {
+    animation: pulse-listening 1.5s infinite ease-in-out;
+}
+
+.read-correct {
+    color: #28a745 !important; /* Green */
+    font-weight: bold;
+    transition: color 0.3s ease;
+}
+
+.read-skipped {
+    color: #dc3545 !important; /* Red */
+    text-decoration: line-through;
+    opacity: 0.6;
+}
+
+.read-misspoken {
+    text-decoration: underline wavy #dc3545;
+    color: #dc3545 !important;
+}
+
+.read-help {
+    background-color: rgba(255, 193, 7, 0.2); /* Yellow/Orange tint */
+    border-bottom: 2px dashed #ffc107;
+}
+
+.read-active {
+    outline: 3px solid var(--primary-hover);
+    outline-offset: 2px;
+    border-radius: 4px;
+    transition: outline 0.2s ease;
+    background-color: transparent !important;
+}
+
+.read-along-highlight {
+    background-color: var(--highlight-color) !important;
+    color: var(--text-color) !important;
+    border-radius: 4px;
+    transition: background-color 0.1s ease, transform 0.1s ease;
+    display: inline-block;
+}
+
+@keyframes word-pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.read-along-highlight.speaking {
+    animation: word-pulse 0.3s ease-out;
+}
+
+.header-speed-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--primary-hover);
+    padding: 4px 12px;
+    border-radius: 20px;
+    color: white;
+    font-size: 0.7em;
+    font-weight: bold;
+    margin-right: 5px;
+}
+
+.settings-item {
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.settings-item label {
+    font-weight: bold;
+    font-size: 0.9em;
+    color: var(--primary-hover);
+}
+
+.settings-item input[type="range"] {
+    width: 100%;
+    cursor: pointer;
+    accent-color: var(--primary-color);
+}
 /* --- Dashboard View --- */
 #dashboard-view h2 {
     color: var(--primary-hover);
