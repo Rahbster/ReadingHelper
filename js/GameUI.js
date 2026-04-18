@@ -342,9 +342,13 @@ export async function startSelectedGame() {
         }
 
         // Extract words from story (lowercase, punctuation-free, unique)
-        const rawWords = storyContent.split(/[\s\n]+/)
-            .map(w => w.replace(/[^\w']/g, '').toLowerCase())
-            .filter(w => w.length > 2);
+        const rawWords = storyContent.replace(/\[IMAGE:.*?\]/g, '')
+            .split(/[\s\n]+/)
+            .map(w => w.toLowerCase()
+                .replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '') // Strip leading/trailing punctuation/quotes
+                .replace(/[^\w']/g, '') // Remove remaining symbols but keep internal word chars
+            )
+            .filter(w => w.length > 2 && /[a-z]/.test(w)); // Ensure word is long enough and contains letters
         wordList = [...new Set(rawWords)];
         
         if (wordList.length < 5) return alert("This story is too short for a game!");
