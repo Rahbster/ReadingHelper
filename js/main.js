@@ -317,7 +317,7 @@ function injectReadAloudUI() {
     btnReadAloud = document.createElement('button');
     btnReadAloud.id = 'btn-read-aloud';
     btnReadAloud.className = 'theme-button';
-    btnReadAloud.innerHTML = `<span>🎤 Karaoke Mode</span>`;
+    btnReadAloud.innerHTML = `🎤 <span class="btn-label">Karaoke Mode</span>`;
     btnReadAloud.onclick = toggleReadAloud;
     headerButtons.prepend(btnReadAloud);
 }
@@ -331,7 +331,7 @@ function injectReadAlongUI() {
     const container = document.createElement('div');
     container.className = 'header-speed-control';
     container.innerHTML = `
-        <label>Speed: <span class="speed-display-val">${readingRate.toFixed(1)}</span>x</label>
+        <label><span class="btn-label">Speed: </span><span class="speed-display-val">${readingRate.toFixed(1)}</span>x</label>
         <input type="range" class="speed-slider-input" min="0.8" max="2.0" step="0.1" value="${readingRate}">
     `;
     
@@ -341,7 +341,7 @@ function injectReadAlongUI() {
     btnReadAlong = document.createElement('button');
     btnReadAlong.id = 'btn-read-along';
     btnReadAlong.className = 'theme-button';
-    btnReadAlong.innerHTML = `<span>🔊 Story Teller</span>`;
+    btnReadAlong.innerHTML = `🔊 <span class="btn-label">Story Teller</span>`;
     btnReadAlong.onclick = toggleReadAlong;
     
     headerButtons.prepend(btnReadAlong);
@@ -370,7 +370,7 @@ async function startReadAlong() {
     isReadingAlong = true;
     isReadAlongPaused = false;
     btnReadAlong.classList.add('speaking');
-    btnReadAlong.querySelector('span').textContent = "🛑 Stop";
+    btnReadAlong.innerHTML = `🛑 <span class="btn-label">Stop</span>`;
  // Process the story one sentence at a time
     while (isReadingAlong && currentReadAlongIndex < storyWordElements.length && mySession === readAlongSessionId) {
         const range = getNextSentenceRange(currentReadAlongIndex);
@@ -481,11 +481,11 @@ function toggleReadAlongPause() {
     
     if (isReadAlongPaused) {
         window.speechSynthesis.pause();
-        if (btnReadAlong) btnReadAlong.querySelector('span').textContent = "▶️ Resume";
+        if (btnReadAlong) btnReadAlong.innerHTML = `▶️ <span class="btn-label">Resume</span>`;
         toastManager.show('Story Teller paused. Click the story to resume.', 'info', 1500);
     } else {
         window.speechSynthesis.resume();
-        if (btnReadAlong) btnReadAlong.querySelector('span').textContent = "🛑 Stop";
+        if (btnReadAlong) btnReadAlong.innerHTML = `🛑 <span class="btn-label">Stop</span>`;
         toastManager.show('Resuming...', 'info', 1000);
     }
 }
@@ -504,7 +504,7 @@ function handleReadAlongEnd() {
     isReadAlongPaused = false;
     if (btnReadAlong) {
         btnReadAlong.classList.remove('speaking');
-        btnReadAlong.querySelector('span').textContent = "🔊 Story Teller";
+        btnReadAlong.innerHTML = `🔊 <span class="btn-label">Story Teller</span>`;
     }
     if (lastHighlightedReadAlongElement) {
         lastHighlightedReadAlongElement.classList.remove('read-along-highlight');
@@ -526,7 +526,7 @@ function toggleReadAloud() {
 function handleSpeechStatusChange(isActive) {
     if (btnReadAloud) {
         btnReadAloud.classList.toggle('speaking', isActive);
-        btnReadAloud.querySelector('span').textContent = isActive ? '🛑 Stop Karaoke' : '🎤 Karaoke Mode';
+        btnReadAloud.innerHTML = isActive ? `🛑 <span class="btn-label">Stop Karaoke</span>` : `🎤 <span class="btn-label">Karaoke Mode</span>`;
     }
     if (!isActive) lastProcessedTranscript = "";
     updateActiveHighlight();

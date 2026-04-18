@@ -25,11 +25,37 @@
         }
     </script>
     <meta name="theme-color" content="#A9C9FF"/>
+    <style>
+        header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 12px;
+        }
+        .header-title-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .header-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            justify-content: flex-end;
+        }
+        @media (max-width: 600px) {
+            .btn-label { display: none; }
+            header h1 { font-size: 1.1rem; }
+        }
+    </style>
 </head>
 <body>
 
     <header>
-        <div style="display: flex; align-items: center;">
+        <div class="header-title-container">
             <button id="hamburger-btn" aria-label="Open Menu">☰</button>
             <h1>Reading Helper</h1>
         </div>
@@ -41,7 +67,7 @@
                     <path d="M10 3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v17a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V3z"/>
                     <path d="M11 5h2v2h-2V5z" fill="white" opacity="0.5"/>
                 </svg>
-                <span>Choose a Story</span>
+                <span class="btn-label">Choose a Story</span>
                 <span id="story-badge" class="badge hidden">0</span>
             </button>
         </div>
