@@ -10,13 +10,15 @@ This project was created to provide a personalized and interactive reading tool 
 
 *   **Word Match Game:** A fun, interactive flashcard game designed for auditory recognition. Features "Tricky Pairs" support to help children distinguish between similar-sounding or similar-looking words (e.g., "tree" vs "three").
 *   **Customizable Word Sets:** Parents can create and manage specific lists of words (e.g., "Week 1", "Sight Words") via the Dashboard to target specific learning goals.
+*   **Dynamic Game Layouts:** The game automatically adjusts between a 3x4 grid (portrait) and a 4x3 grid (landscape) to maximize screen space on iPhones, iPads, and desktops.
+*   **Adaptive Text Scaling:** Flashcards use CSS Container Queries to ensure word text dynamically fills the available card space, remaining legible on all device sizes.
 *   **Victory Celebrations:** Completing a game triggers a celebratory firework show using the words the child just mastered, providing positive reinforcement.
 *   **Advanced Speech Synthesis:** High-quality voice selection (prioritizing "Natural" and "Google" voices) with specialized enunciation logic for short, tricky words like "the" and "fast".
 *   **AI Story Illustrator:** Use Google Gemini to automatically analyze your story and insert context-aware image tags, then generate unique illustrations using AI.
 *   **Magic Image:** Highlight a specific sentence or paragraph and let the AI "Magic Image" creator build a detailed visual prompt and illustration for that exact scene.
 *   **Quick Chat:** Chat directly with a connected peer while sharing stories.
 *   **Tap-to-Speak:** Simply tap on any word in a story to hear it read aloud using the browser's built-in speech synthesis. This provides immediate auditory feedback, reinforcing word recognition.
-*   **Syllable Breakdown:** Long-press on any word to see it broken down into syllables, helping with decoding complex words.
+*   **Syllable Breakdown:** Long-press on any word to see it broken down into syllables. Optimized for touch with unified Pointer Events to prevent accidental scrolling triggers.
 *   **Story Sharing:** Connect two devices directly (Peer-to-Peer) to share stories instantly. Great for parents sending stories to a child's device.
 *   **Creator Mode:** Write your own stories, add images, and customize phonetic guides or pronunciations for specific words.
 *   **Parent's Dashboard:** The app tracks which words are tapped most frequently, displaying them in a "Tricky Words" list. This provides a simple, data-driven way for parents to see which words their child may need extra practice with.

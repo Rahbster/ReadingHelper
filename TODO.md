@@ -12,6 +12,9 @@
 - **Game Word Sets**: Management UI in Dashboard and selection modal are fully functional.
 - **Visual Celebrations**: Canvas-based firework system with procedural audio and haptics.
 - **Speech Clarity**: Specialized enunciation for short words and improved voice selection filtering.
+- **Responsive Game Layout**: Dynamic grid switching (3x4/4x3) and `100dvh` viewport handling.
+- **Adaptive Font Scaling**: Card text scaling using CSS Container Queries (`cqmin`).
+- **Unified Touch Interaction**: Migration to Pointer Events for consistent behavior across iPad, iPhone, and Desktop.
 
 ### AI Integration
 - **Refactored Architecture**: AI logic is isolated in `js/ai-manager.js`.
@@ -31,9 +34,6 @@
 - **Error Handling**: Replace technical 404/503 errors with child-friendly "AI is drawing..." or "AI is resting" messages in Reader Mode.
 
 ## ❌ What Needs Work
-### AI Refinement
-- **Style Continuity**: Investigate using consistent seeds in Pollinations.ai to maintain visual character consistency across a single story.
-
 ### AI Refinement
 - **Style Continuity**: Investigate using consistent seeds in Pollinations.ai to maintain visual character consistency across a single story.
 

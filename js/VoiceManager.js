@@ -69,7 +69,6 @@ export function speakText(textToSpeak, elementToHighlight = null) {
     currentUtterance.rate = textToSpeak.length <= 4 ? 0.90 : 1.0;
     currentUtterance.pitch = textToSpeak.length <= 4 ? 1.05 : 1.0;
     currentUtterance.volume = 1.0;
-    currentUtterance.lang = 'en-US';
 
     currentUtterance.onstart = () => {
         if (currentlySpeakingElement) {

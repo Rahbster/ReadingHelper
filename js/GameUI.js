@@ -41,15 +41,16 @@ export function stopTimer() {
 export function renderGameGrid() {
     if (!dom || !dom.gameGrid) return;
 
-    dom.gameGrid.style.gridTemplateColumns = `repeat(${gameManager.state.config.gridSize[0]}, 1fr)`;
+    const [cols, rows] = gameManager.state.config.gridSize;
+    dom.gameGrid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    dom.gameGrid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+
     dom.gameGrid.innerHTML = gameManager.state.gridWords.map((word, index) => {
         if (!word) return '<div class="flash-card-placeholder"></div>';
         return `
             <div class="flash-card" data-index="${index}" data-word="${word}">
-                <div class="card-inner">
-                    <div class="card-front">${word}</div>
-                    <div class="card-back"><img src="icons/icon-tab.png"></div>
-                </div>
+                <div class="card-front">${word}</div>
+                <div class="card-back"><img src="icons/icon-tab.png"></div>
             </div>
         `;
     }).join('');
@@ -128,7 +129,7 @@ export function startCelebration(score, time, errors) {
             ctx.translate(this.x, this.y);
             ctx.rotate(this.angle);
             ctx.fillStyle = this.color;
-            ctx.font = `bold ${this.fontSize}px 'Segoe UI', sans-serif`;
+            ctx.font = `bold ${this.fontSize}px 'Comic Neue', cursive`;
             ctx.fillText(this.word, 0, 0);
             ctx.restore();
         }
@@ -349,13 +350,17 @@ export async function startSelectedGame() {
         if (wordList.length < 5) return alert("This story is too short for a game!");
     }
 
+    // Determine grid size based on orientation: 3x4 for portrait, 4x3 for landscape
+    const isPortrait = window.innerHeight > window.innerWidth;
+    const gridSize = isPortrait ? [3, 4] : [4, 3];
+
     dom.gameSetSelectModal.classList.add('hidden');
     uiManager.showView('game');
     gameManager.start({ 
         title: title, 
         words: wordList, 
         sampleSize: Math.min(wordList.length, 24) 
-    }, { gridSize: [4, 3] });
+    }, { gridSize: gridSize });
 
     renderGameGrid();
     if (gameTimerInterval) clearInterval(gameTimerInterval);

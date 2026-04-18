@@ -9,7 +9,8 @@ The application follows a modular monolith structure on the frontend, breaking d
 
 ### UI & Presentation Layer
 *   **`index.html`**: The single-page shell of the application. It contains all the necessary modal structures, the reading canvas, and the Creator Mode inputs.
-*   **`css/*.css`**: Vanilla CSS providing responsivity, dynamic themes (Light/Dark mode), and component styling.
+*   **`css/*.css`**: Vanilla CSS providing responsivity and dynamic themes. Utilizes modern features like `100dvh` for full-screen mobile layouts and **CSS Container Queries** for component-level text scaling.
+*   **`js/GameUI.js`**: Handles the visual rendering of the game. Includes logic for orientation-aware grid layouts (3x4 vs 4x3) and canvas-based particle celebrations.
 *   **`js/main.js`**: The main entry point. It orchestrates the story rendering, word tracking, speech synthesis triggers, and syllable heuristic algorithms.
 *   **`js/GameManager.js`**: Pure logic class that manages the state of the Word Match game, including word pooling, shuffling, scoring, and target selection.
 *   **`js/UIManager.js`**: Manages all non-essential UI DOM interactions, including toggling modals, handling the sidebar navigation, updating settings, and toggling themes.
