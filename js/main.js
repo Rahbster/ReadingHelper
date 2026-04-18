@@ -371,51 +371,71 @@ async function startReadAlong() {
     isReadAlongPaused = false;
     btnReadAlong.classList.add('speaking');
     btnReadAlong.querySelector('span').textContent = "🛑 Stop";
+ // Process the story one sentence at a time
+    while (isReadingAlong && currentReadAlongIndex < storyWordElements.length && mySession === readAlongSessionId) {
+        const range = getNextSentenceRange(currentReadAlongIndex);
+        await runSentenceRead(range, mySession);
+        
+        // Small pause between sentences for natural phrasing and resync
+        if (isReadingAlong && !isReadAlongPaused) {
+            await new Promise(r => setTimeout(r, 200));
+        }
+    }
 
-    await runFluidRead(mySession);
+    if (mySession === readAlongSessionId) {
+        handleReadAlongEnd();
+    }
 }
 
 /**
- * Fluid Mode: Used for normal and fast reading.
- * Reads the entire remaining text in one go for natural coarticulation.
+ * Identifies the range of words that make up the next sentence.
  */
-async function runFluidRead(sessionId) {
-    const text = dom.storyInput.value;
-    const startWord = storyWordElements[currentReadAlongIndex];
-    const startChar = parseInt(startWord.dataset.start);
-    
-    const speakableText = text.substring(startChar).replace(/\[IMAGE:.*?\]/g, (m) => " ".repeat(m.length));
+function getNextSentenceRange(startIndex) {
+    let endIndex = startIndex;
+    for (let i = startIndex; i < storyWordElements.length; i++) {
+        endIndex = i;
+        const word = storyWordElements[i].textContent;
+        // Sentence ends on punctuation or if it's the last word
+        if (/[.!?]/.test(word) || i === storyWordElements.length - 1) {
+            break;
+        }
+    }
+    return { start: startIndex, end: endIndex };
+}
 
-    await VoiceManager.speakText(speakableText, null, (event) => {
-        if (sessionId !== readAlongSessionId) return;
+/**
+ * Reads a specific range of words as a single segment.
+ */
+async function runSentenceRead(range, sessionId) {
+    const text = dom.storyInput.value;
+    const firstWord = storyWordElements[range.start];
+    const lastWord = storyWordElements[range.end];
+    
+    const startChar = parseInt(firstWord.dataset.start);
+    const endChar = parseInt(lastWord.dataset.end);
+    
+    // Extract just this sentence, preserving character offsets via space-padding
+    const sentenceText = text.substring(startChar, endChar).replace(/\[IMAGE:.*?\]/g, (m) => " ".repeat(m.length));
+
+    await VoiceManager.speakText(sentenceText, null, (event) => {
+        if (sessionId !== readAlongSessionId || isReadAlongPaused) return;
         
         if (event.name === 'word') {
-            const absoluteCharIndex = event.charIndex + startChar;
+            const relativeCharIndex = event.charIndex;
+            const absoluteCharIndex = relativeCharIndex + startChar;
 
-            // Look in a small window around the current index to handle slight timing drift 
-            // and prevent "jumping" to random parts of the story.
-            let wordIdx = -1;
-            const startRange = Math.max(0, currentReadAlongIndex - 2);
-            const endRange = Math.min(storyWordMetadata.length, currentReadAlongIndex + 30);
-
-            for (let i = startRange; i < endRange; i++) {
+            // Search only within the active sentence range
+            for (let i = range.start; i <= range.end; i++) {
                 if (absoluteCharIndex >= storyWordMetadata[i].start && absoluteCharIndex < storyWordMetadata[i].end) {
-                    wordIdx = i;
+                    if (i !== currentReadAlongIndex) {
+                        currentReadAlongIndex = i;
+                        requestAnimationFrame(() => highlightReadAlongWord(i));
+                    }
                     break;
                 }
             }
-
-            if (wordIdx !== -1 && wordIdx !== currentReadAlongIndex) {
-                currentReadAlongIndex = wordIdx;
-                // Decouple DOM update from speech event to prevent iPad main-thread lag
-                requestAnimationFrame(() => highlightReadAlongWord(wordIdx));
-            }
         }
     }, readingRate);
-
-    if (sessionId === readAlongSessionId) {
-        handleReadAlongEnd();
-    }
 }
 
 function highlightReadAlongWord(index) {
@@ -471,6 +491,11 @@ function handleReadAlongEnd() {
     // Only reset if we actually reached the end
     if (currentReadAlongIndex >= storyWordElements.length - 1) {
         currentReadAlongIndex = 0;
+
+        // Ensure trailing content (like a final image) is scrolled into view
+        if (dom.storyDisplay && dom.storyDisplay.lastElementChild) {
+            dom.storyDisplay.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
     }
     isReadingAlong = false;
     isReadAlongPaused = false;
