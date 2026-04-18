@@ -57,10 +57,13 @@ export function speakText(textToSpeak, elementToHighlight = null, onBoundary = n
     const savedVoiceName = localStorage.getItem(VOICE_PREF_KEY);
     const isUS = (v) => v.lang.toLowerCase().replace('_', '-').startsWith('en-us');
     const isEnglish = (v) => v.lang.toLowerCase().startsWith('en');
+    const isLocal = (v) => v.localService === true;
 
     const preferredVoice = 
         voices.find(v => v.name === savedVoiceName)
+        || voices.find(v => isUS(v) && isHighQuality(v) && isLocal(v))
         || voices.find(v => isUS(v) && isHighQuality(v))
+        || voices.find(v => isEnglish(v) && isHighQuality(v) && isLocal(v)) 
         || voices.find(v => isEnglish(v) && isHighQuality(v)) 
         || voices.find(v => isUS(v))
         || voices.find(v => isEnglish(v));
@@ -71,7 +74,15 @@ export function speakText(textToSpeak, elementToHighlight = null, onBoundary = n
     }
 
     if (onBoundary) {
-        currentUtterance.onboundary = onBoundary;
+        let lastUpdate = 0;
+        currentUtterance.onboundary = (event) => {
+            const now = performance.now();
+            // Prevent firing boundary events too rapidly to avoid UI contention on mobile
+            if (now - lastUpdate > 40) {
+                onBoundary(event);
+                lastUpdate = now;
+            }
+        };
     }
 
     const lengthFactor = textToSpeak.length <= 4 ? 0.90 : 1.0;
@@ -102,9 +113,13 @@ export function speakText(textToSpeak, elementToHighlight = null, onBoundary = n
         resolve();
     };
 
+    // iPad/iOS performance optimization: Increase delay to avoid main-thread contention during init
+    const isMobile = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const speakDelay = isMobile ? 150 : 50;
+
     setTimeout(() => {
         window.speechSynthesis.speak(currentUtterance);
-    }, 50);
+    }, speakDelay);
     });
 }
 
