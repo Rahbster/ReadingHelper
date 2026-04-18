@@ -66,8 +66,8 @@ export function speakText(textToSpeak, elementToHighlight = null) {
         currentUtterance.lang = preferredVoice.lang;
     }
 
-    currentUtterance.rate = textToSpeak.length <= 4 ? 0.55 : 0.75;
-    currentUtterance.pitch = textToSpeak.length <= 4 ? 1.15 : 1.0;
+    currentUtterance.rate = textToSpeak.length <= 4 ? 0.90 : 1.0;
+    currentUtterance.pitch = textToSpeak.length <= 4 ? 1.05 : 1.0;
     currentUtterance.volume = 1.0;
     currentUtterance.lang = 'en-US';
 
