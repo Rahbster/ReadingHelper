@@ -5,12 +5,15 @@
  */
 
 import * as VoiceManager from './VoiceManager.js';
+import * as storyManager from '../story-manager.js';
 
 let dom;
 let gameManager;
 let uiManager;
 const GAME_SETS_KEY = 'readingHelperGameWordSets';
 let selectedGameSetId = null;
+let selectedItemType = 'set'; // 'set', 'story', or 'default-story'
+let currentGameImages = []; // Images to show during celebration
 let gameTimerInterval = null;
 
 /**
@@ -84,6 +87,12 @@ export function startCelebration(score, time, errors) {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
+    const imageElements = currentGameImages.map(src => {
+        const img = new Image();
+        img.src = src;
+        return img;
+    });
+
     const words = ["Great!", "Awesome!", "Wow!", "Nice!", "Star!", "Reader!", "Super!"];
     const particles = [];
 
@@ -125,6 +134,36 @@ export function startCelebration(score, time, errors) {
         }
     }
 
+    class ImageParticle {
+        constructor() { this.reset(); }
+        reset() {
+            this.img = imageElements[Math.floor(Math.random() * imageElements.length)];
+            this.x = Math.random() * canvas.width;
+            this.y = canvas.height + 100;
+            this.vx = (Math.random() - 0.5) * 5;
+            this.vy = -Math.random() * 12 - 8;
+            this.gravity = 0.15;
+            this.rotation = (Math.random() - 0.5) * 0.1;
+            this.angle = 0;
+            this.size = 100 + Math.random() * 80;
+        }
+        update() {
+            this.vy += this.gravity;
+            this.x += this.vx;
+            this.y += this.vy;
+            this.angle += this.rotation;
+            if (this.y > canvas.height + 150 && this.vy > 0) this.reset();
+        }
+        draw() {
+            if (!this.img || !this.img.complete) return;
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.angle);
+            ctx.drawImage(this.img, -this.size/2, -this.size/2, this.size, this.size);
+            ctx.restore();
+        }
+    }
+
     class Spark {
         constructor(x, y, color) {
             this.x = x; this.y = y; this.color = color;
@@ -142,6 +181,9 @@ export function startCelebration(score, time, errors) {
     }
 
     for (let i = 0; i < 8; i++) particles.push(new WordParticle());
+    if (imageElements.length > 0) {
+        for (let i = 0; i < 4; i++) particles.push(new ImageParticle());
+    }
 
     function animate() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -149,7 +191,9 @@ export function startCelebration(score, time, errors) {
             p.update(); p.draw();
             if (p instanceof Spark && p.alpha <= 0) particles.splice(i, 1);
         });
-        if (!dom.celebrationModal.classList.contains('hidden')) requestAnimationFrame(animate);
+        if (!dom.celebrationModal.classList.contains('hidden')) {
+            requestAnimationFrame(animate);
+        }
     }
     animate();
 }
@@ -200,15 +244,48 @@ export function handleGameSetEditorAction(e) {
     }
 }
 
-export function openGameSetSelector() {
+export async function openGameSetSelector() {
     uiManager.closeNav();
     const sets = getGameWordSets().sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
-    selectedGameSetId = sets[0]?.id;
-    dom.gameSetSelectList.innerHTML = sets.map(set => `
-        <div class="story-item game-set-item ${set.id === selectedGameSetId ? 'selected' : ''}" data-id="${set.id}">
-            <span class="story-item-title">${set.name}</span>
-            <span style="font-size: 0.8rem; opacity: 0.7;">${set.words.split(',').length} words</span>
-        </div>`).join('');
+    
+    const userStories = storyManager.getUserStories();
+    let defaultStories = [];
+    try {
+        const res = await fetch('stories.json');
+        if (res.ok) defaultStories = await res.json();
+    } catch (e) {}
+
+    selectedGameSetId = selectedGameSetId || sets[0]?.id;
+    
+    let html = '';
+    
+    // Word Sets
+    if (sets.length > 0) {
+        html += '<div class="story-group-header">Word Sets</div>';
+        html += sets.map(set => `
+            <div class="story-item game-set-item ${set.id === selectedGameSetId && selectedItemType === 'set' ? 'selected' : ''}" data-id="${set.id}" data-type="set">
+                <span class="story-item-title">${set.name}</span>
+                <span style="font-size: 0.8rem; opacity: 0.7;">${set.words.split(',').length} words</span>
+            </div>`).join('');
+    }
+
+    // Stories
+    if (userStories.length > 0 || defaultStories.length > 0) {
+        html += '<div class="story-group-header" style="margin-top: 15px;">Stories</div>';
+        html += userStories.map(story => `
+            <div class="story-item game-set-item ${story.id === selectedGameSetId ? 'selected' : ''}" data-id="${story.id}" data-type="story">
+                <span class="story-item-title">${story.title}</span>
+                <span style="font-size: 0.8rem; opacity: 0.7;">My Story</span>
+            </div>`).join('');
+        
+        html += defaultStories.map(story => `
+            <div class="story-item game-set-item ${story.path === selectedGameSetId ? 'selected' : ''}" data-id="${story.path}" data-type="default-story">
+                <span class="story-item-title">${story.title}</span>
+                <span style="font-size: 0.8rem; opacity: 0.7;">Built-in</span>
+            </div>`).join('');
+    }
+
+    dom.gameSetSelectList.innerHTML = html;
     dom.gameSetSelectModal.classList.remove('hidden');
 }
 
@@ -216,20 +293,70 @@ export function handleGameSetSelection(e) {
     const item = e.target.closest('.game-set-item');
     if (!item) return;
     selectedGameSetId = item.dataset.id;
+    selectedItemType = item.dataset.type;
     dom.gameSetSelectList.querySelectorAll('.game-set-item').forEach(el => el.classList.remove('selected'));
     item.classList.add('selected');
 }
 
-export function startSelectedGame() {
-    const sets = getGameWordSets();
-    const set = sets.find(s => s.id === selectedGameSetId);
-    if (!set || !set.words.trim()) return alert('Please select a set with words!');
-    set.lastUsed = Date.now();
-    saveGameWordSets(sets);
-    const wordList = set.words.split(',').map(w => w.trim()).filter(w => w);
+export async function startSelectedGame() {
+    let wordList = [];
+    let title = "";
+    currentGameImages = [];
+
+    if (selectedItemType === 'set') {
+        const sets = getGameWordSets();
+        const set = sets.find(s => s.id === selectedGameSetId);
+        if (!set || !set.words.trim()) return alert('Please select a set with words!');
+        set.lastUsed = Date.now();
+        saveGameWordSets(sets);
+        title = set.name;
+        wordList = set.words.split(',').map(w => w.trim()).filter(w => w);
+    } else {
+        let storyContent = "";
+        if (selectedItemType === 'story') {
+            const story = await storyManager.getUserStoryById(selectedGameSetId);
+            if (!story) return;
+            title = story.title;
+            storyContent = story.content;
+            if (story.images) {
+                currentGameImages = Object.values(story.images).filter(img => img && img.startsWith('data:'));
+            }
+        } else if (selectedItemType === 'default-story') {
+            try {
+                const res = await fetch('stories.json');
+                const manifest = await res.json();
+                const entry = manifest.find(s => s.path === selectedGameSetId);
+                title = entry?.title || "Story Game";
+
+                const response = await fetch(`${selectedGameSetId}story.txt`);
+                storyContent = await response.text();
+                
+                const imgRegex = /\[IMAGE:\s*(.*?)\s*\]/g;
+                let m;
+                while ((m = imgRegex.exec(storyContent)) !== null) {
+                    const imgPath = m[1].trim();
+                    if (!imgPath.startsWith('ai-gen-')) currentGameImages.push(`${selectedGameSetId}${imgPath}`);
+                }
+            } catch (e) { return; }
+        }
+
+        // Extract words from story (lowercase, punctuation-free, unique)
+        const rawWords = storyContent.split(/[\s\n]+/)
+            .map(w => w.replace(/[^\w']/g, '').toLowerCase())
+            .filter(w => w.length > 2);
+        wordList = [...new Set(rawWords)];
+        
+        if (wordList.length < 5) return alert("This story is too short for a game!");
+    }
+
     dom.gameSetSelectModal.classList.add('hidden');
     uiManager.showView('game');
-    gameManager.start({ title: set.name, words: wordList, sampleSize: wordList.length }, { gridSize: [4, 3] });
+    gameManager.start({ 
+        title: title, 
+        words: wordList, 
+        sampleSize: Math.min(wordList.length, 24) 
+    }, { gridSize: [4, 3] });
+
     renderGameGrid();
     if (gameTimerInterval) clearInterval(gameTimerInterval);
     dom.gameTimer.textContent = '0s';

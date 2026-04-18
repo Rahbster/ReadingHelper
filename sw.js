@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reading-helper-cache-v9';
+const CACHE_NAME = 'reading-helper-cache-v10';
 // App Shell - the core files for the app's functionality
 const appShellFiles = [
     './',
@@ -14,6 +14,7 @@ const appShellFiles = [
     './js/VoiceManager.js',
     './js/GameUI.js',
     './js/storage-helper.js',
+    './js/peerjs.min.js',
     './js/GameManager.js',
     './js/peer-service.js',
     './js/modals/peer_connection_modal.js',
@@ -69,8 +70,7 @@ self.addEventListener('install', (event) => {
             const urlsToCache = [...new Set([
                 ...appShellFiles, 
                 ...storyFiles, 
-                ...imageFiles,
-                './js/peerjs.min.js' // Cache the local library file - This line is already correct.
+                ...imageFiles
             ])];
 
             const cache = await caches.open(CACHE_NAME);

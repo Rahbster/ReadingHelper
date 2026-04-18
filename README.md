@@ -8,7 +8,7 @@ This project was created to provide a personalized and interactive reading tool 
 
 ## ✨ Key Features
 
-*   **Word Match Game:** A fun, interactive flashcard game designed for auditory recognition. Children listen to a word and find it on a grid of cards.
+*   **Word Match Game:** A fun, interactive flashcard game designed for auditory recognition. Features "Tricky Pairs" support to help children distinguish between similar-sounding or similar-looking words (e.g., "tree" vs "three").
 *   **Customizable Word Sets:** Parents can create and manage specific lists of words (e.g., "Week 1", "Sight Words") via the Dashboard to target specific learning goals.
 *   **Victory Celebrations:** Completing a game triggers a celebratory firework show using the words the child just mastered, providing positive reinforcement.
 *   **Advanced Speech Synthesis:** High-quality voice selection (prioritizing "Natural" and "Google" voices) with specialized enunciation logic for short, tricky words like "the" and "fast".

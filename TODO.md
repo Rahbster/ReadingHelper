@@ -8,7 +8,7 @@
 - **Local Storage**: Stories are saved and retrieved correctly using the `story-manager.js`.
 - **PWA & Offline**: Service worker is configured to cache the app shell and local story assets.
 - **P2P Sharing**: PeerJS integration allows for direct device-to-device story transfers.
-- **Word Match Game**: Core game loop, scoring, and auditory-only mode (visual target removed) are complete.
+- **Word Match Game**: Core game loop, scoring, auditory-only mode, and **Minimal Pairs (distractor map)** support are complete.
 - **Game Word Sets**: Management UI in Dashboard and selection modal are fully functional.
 - **Visual Celebrations**: Canvas-based firework system with procedural audio and haptics.
 - **Speech Clarity**: Specialized enunciation for short words and improved voice selection filtering.
