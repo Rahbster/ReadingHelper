@@ -376,6 +376,9 @@ async function startReadAlong() {
         const range = getNextSentenceRange(currentReadAlongIndex);
         await runSentenceRead(range, mySession);
         
+        // Explicitly move to the next word after the sentence to prevent infinite loops on last words
+        currentReadAlongIndex = range.end + 1;
+        
         // Small pause between sentences for natural phrasing and resync
         if (isReadingAlong && !isReadAlongPaused) {
             await new Promise(r => setTimeout(r, 200));
