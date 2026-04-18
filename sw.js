@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reading-helper-cache-v10';
+const CACHE_NAME = 'reading-helper-cache-v11';
 // App Shell - the core files for the app's functionality
 const appShellFiles = [
     './',

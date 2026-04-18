@@ -34,7 +34,8 @@ export function speakText(textToSpeak, elementToHighlight = null) {
     const savedVoiceName = localStorage.getItem(VOICE_PREF_KEY);
     const isUS = (v) => v.lang.toLowerCase().replace('_', '-') === 'en-us';
     const isEnglish = (v) => v.lang.toLowerCase().startsWith('en');
-    const isHighQuality = (v) => v.name.includes('Natural') || v.name.includes('Google');
+    // Look for high-quality markers across Windows (Natural), Chrome (Google), and Apple (Premium/Enhanced/Siri)
+    const isHighQuality = (v) => v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Premium') || v.name.includes('Enhanced') || v.name.includes('Siri');
 
     const preferredVoice = 
         voices.find(v => v.name === savedVoiceName)
@@ -89,8 +90,8 @@ export function populateVoiceList(selectElement) {
 
     const englishVoices = voices.filter(v => v.lang.toLowerCase().startsWith('en'))
                                 .sort((a, b) => {
-                                    const aHigh = a.name.includes('Natural') || a.name.includes('Google');
-                                    const bHigh = b.name.includes('Natural') || b.name.includes('Google');
+                                    const aHigh = a.name.includes('Natural') || a.name.includes('Google') || a.name.includes('Premium') || a.name.includes('Enhanced') || a.name.includes('Siri');
+                                    const bHigh = b.name.includes('Natural') || b.name.includes('Google') || b.name.includes('Premium') || b.name.includes('Enhanced') || b.name.includes('Siri');
                                     if (aHigh && !bHigh) return -1;
                                     if (!aHigh && bHigh) return 1;
                                     return a.name.localeCompare(b.name);
