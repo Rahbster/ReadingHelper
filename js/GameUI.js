@@ -50,7 +50,7 @@ export function renderGameGrid() {
         return `
             <div class="flash-card" data-index="${index}" data-word="${word}">
                 <div class="card-front">${word}</div>
-                <div class="card-back"><img src="icons/icon-tab.png"></div>
+                <div class="card-back"><img src="icons/reading-icon.svg"></div>
             </div>
         `;
     }).join('');

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#87CEEB;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6495ED;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background Rounded Square -->
+  <rect width="512" height="512" rx="100" fill="url(#grad)"/>
+  <!-- Open Book -->
+  <path d="M120 160c0-20 15-30 35-30h180c20 0 35 10 35 30v200c0 20-15 30-35 30H155c-20 0-35-10-35-30V160z" fill="#fff"/>
+  <path d="M256 130v260M160 360c90 0 91 20 192 20M160 160c90 0 91 20 192 20" stroke="#87CEEB" stroke-width="12" fill="none" stroke-linecap="round"/>
+  <!-- Magic Sparkle -->
+  <path d="M400 120l12 30 30 12-30 12-12 30-12-30-30-12 30-12z" fill="#FFD700"/>
+  <circle cx="380" cy="180" r="10" fill="#FFD700" opacity="0.6"/>
+</svg>

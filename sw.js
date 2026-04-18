@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reading-helper-cache-v11';
+const CACHE_NAME = 'reading-helper-cache-v12';
 // App Shell - the core files for the app's functionality
 const appShellFiles = [
     './',
@@ -22,9 +22,11 @@ const appShellFiles = [
     './css/sidenav.css',
     './css/chat.css',
     './css/peer_connection_modal.css',
+    './icons/icon-180x180.png',
     './icons/icon-192x192.png',
     './icons/icon-512x512.png',
     './icons/icon-tab.png',
+    './icons/reading-icon.svg',
     './instructions.html'
 ];
 
