@@ -47,7 +47,6 @@ const dom = {
     settingsNameInput: document.getElementById('settings-name'),
     googleApiKeyInput: document.getElementById('settings-google-api-key'),
     apiKeyStatus: document.getElementById('api-key-status'),
-    showAllVoicesToggle: document.getElementById('settings-show-all-voices'),
     testApiKeyBtn: document.getElementById('test-api-key-btn'),
     settingsVoiceSelection: document.getElementById('settings-voice-selection'),
     getApiKeyHelpBtn: document.getElementById('get-api-key-help-btn'),
@@ -248,7 +247,7 @@ async function init() {
     setupEventListeners();
     renderDashboard();
     GameUI.renderGameSetEditor();
-    VoiceManager.populateVoiceList(dom.settingsVoiceSelection, dom.showAllVoicesToggle?.checked);
+    VoiceManager.populateVoiceList(dom.settingsVoiceSelection);
     performStorageMaintenance();
 
     // Handle PWA Shortcuts/URL parameters
@@ -297,26 +296,21 @@ function setupEventListeners() {
             localStorage.setItem(VoiceManager.VOICE_PREF_KEY, voiceName);
             toastManager.show('Voice saved!', 'success');
             
-            if (voiceName) {
-                const funPhrases = [
-                    "How now brown cow!",
-                    "Peter Piper picked a peck of pickled peppers.",
-                    "She sells seashells by the seashore.",
-                    "I am ready to help you read today!",
-                    "A big blue bear baked a batch of bread.",
-                    "Fuzzy Wuzzy was a bear, Fuzzy Wuzzy had no hair.",
-                    "I scream, you scream, we all scream for ice cream!",
-                    "Betty Botter bought some butter.",
-                    "Six slippery snails slid slowly seaward.",
-                    "Red lorry, yellow lorry, red lorry, yellow lorry.",
-                    "Double bubble gum, bubbles double."
-                ];
-                const randomPhrase = funPhrases[Math.floor(Math.random() * funPhrases.length)];
-                VoiceManager.speakText(randomPhrase);
-            }
-        }},
-        { element: dom.showAllVoicesToggle, event: 'change', handler: (e) => {
-            VoiceManager.populateVoiceList(dom.settingsVoiceSelection, e.target.checked);
+            const funPhrases = [
+                "How now brown cow!",
+                "Peter Piper picked a peck of pickled peppers.",
+                "She sells seashells by the seashore.",
+                "I am ready to help you read today!",
+                "A big blue bear baked a batch of bread.",
+                "Fuzzy Wuzzy was a bear, Fuzzy Wuzzy had no hair.",
+                "I scream, you scream, we all scream for ice cream!",
+                "Betty Botter bought some butter.",
+                "Six slippery snails slid slowly seaward.",
+                "Red lorry, yellow lorry, red lorry, yellow lorry.",
+                "Double bubble gum, bubbles double."
+            ];
+            const randomPhrase = funPhrases[Math.floor(Math.random() * funPhrases.length)];
+            VoiceManager.speakText(randomPhrase);
         }},
         { element: dom.gameSetSelectList, event: 'click', handler: (e) => GameUI.handleGameSetSelection(e) },
         { element: dom.confirmGameStartBtn, event: 'click', handler: () => GameUI.startSelectedGame() },
@@ -1467,7 +1461,7 @@ if ('speechSynthesis' in window) {
     if (speechSynthesis.onvoiceschanged !== undefined) {
         speechSynthesis.onvoiceschanged = () => {
             window.speechSynthesis.getVoices();
-            VoiceManager.populateVoiceList(dom.settingsVoiceSelection, dom.showAllVoicesToggle?.checked);
+            VoiceManager.populateVoiceList(dom.settingsVoiceSelection);
         };
     }
 }

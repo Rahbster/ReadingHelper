@@ -100,7 +100,7 @@ export function speakText(textToSpeak, elementToHighlight = null) {
 /**
  * Populates a select element with available high-quality English voices.
  */
-export function populateVoiceList(selectElement, showAll = false) {
+export function populateVoiceList(selectElement) {
     if (!selectElement || !('speechSynthesis' in window)) return;
 
     // Some browsers return an empty list on the first call; 
@@ -112,11 +112,10 @@ export function populateVoiceList(selectElement, showAll = false) {
     const seenNames = new Set();
 
     const displayVoices = voices.filter(v => {
+                                    if (!v.lang.toLowerCase().startsWith('en')) return false;
                                     if (seenNames.has(v.name)) return false;
                                     seenNames.add(v.name);
-                                    
-                                    if (showAll) return true;
-                                    return v.lang.toLowerCase().startsWith('en');
+                                    return true;
                                 })
                                 .sort((a, b) => {
                                     const aHigh = isHighQuality(a);
