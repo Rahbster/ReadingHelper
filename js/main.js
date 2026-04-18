@@ -109,6 +109,7 @@ let storyWordElements = [];
 let lastProcessedTranscript = ""; // Tracks already-processed text from the current speech segment
 let isReadingAlong = false;
 let currentReadAlongIndex = 0;
+let storyWordMetadata = []; // Cached numeric ranges for high-performance TTS sync
 let lastHighlightedReadAlongElement = null;
 let readingRate = 1.0;
 let isReadAlongPaused = false;
@@ -390,20 +391,24 @@ async function runFluidRead(sessionId) {
         
         if (event.name === 'word') {
             const absoluteCharIndex = event.charIndex + startChar;
-            
-            // Optimized search: start looking from the current index forward
+
+            // Look in a small window around the current index to handle slight timing drift 
+            // and prevent "jumping" to random parts of the story.
             let wordIdx = -1;
-            for (let i = currentReadAlongIndex; i < storyWordElements.length; i++) {
-                const el = storyWordElements[i];
-                if (absoluteCharIndex >= parseInt(el.dataset.start) && absoluteCharIndex < parseInt(el.dataset.end)) {
+            const startRange = Math.max(0, currentReadAlongIndex - 2);
+            const endRange = Math.min(storyWordMetadata.length, currentReadAlongIndex + 30);
+
+            for (let i = startRange; i < endRange; i++) {
+                if (absoluteCharIndex >= storyWordMetadata[i].start && absoluteCharIndex < storyWordMetadata[i].end) {
                     wordIdx = i;
                     break;
                 }
             }
 
-            if (wordIdx !== -1) {
+            if (wordIdx !== -1 && wordIdx !== currentReadAlongIndex) {
                 currentReadAlongIndex = wordIdx;
-                highlightReadAlongWord(wordIdx);
+                // Decouple DOM update from speech event to prevent iPad main-thread lag
+                requestAnimationFrame(() => highlightReadAlongWord(wordIdx));
             }
         }
     }, readingRate);
@@ -435,7 +440,8 @@ function scrollToWord(el) {
     
     // Only scroll if the element is not clearly visible to reduce iPad jitter
     const rect = el.getBoundingClientRect();
-    const isVisible = (rect.top >= 0 && rect.bottom <= window.innerHeight);
+    // Use a tighter "comfort zone" to prevent constant micro-scrolling
+    const isVisible = (rect.top >= 150 && rect.bottom <= window.innerHeight - 150);
     
     if (!isVisible) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -941,6 +947,11 @@ function renderStory() {
     dom.storyDisplay.innerHTML = html;
     // Map the spans back to an array for the reading pointer
     storyWordElements = Array.from(dom.storyDisplay.querySelectorAll('.speakable-word'));
+    // Cache numeric ranges to avoid expensive parseInt calls during high-frequency TTS events
+    storyWordMetadata = storyWordElements.map(el => ({
+        start: parseInt(el.dataset.start),
+        end: parseInt(el.dataset.end)
+    }));
     updateActiveHighlight();
 }
 
