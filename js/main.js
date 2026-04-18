@@ -204,11 +204,7 @@ async function checkForUpdates() {
         toastManager.show('Checking for updates...', 'info');
         await registration.update();
         
-        setTimeout(() => {
-            if (!registration.installing && !registration.waiting) {
-                toastManager.show('Your app is up to date!', 'success');
-            }
-        }, 1500);
+        // The 'controllerchange' listener in setupServiceWorker will handle the reload if an update is found.
     } catch (error) {
         console.error('Manual update check failed:', error);
         toastManager.show('Failed to check for updates.', 'error');

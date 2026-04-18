@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reading-helper-cache-v12';
+const CACHE_NAME = 'reading-helper-cache-v13';
 // App Shell - the core files for the app's functionality
 const appShellFiles = [
     './',
@@ -33,6 +33,7 @@ const appShellFiles = [
 self.addEventListener('install', (event) => {
     event.waitUntil(
         (async () => {
+            self.skipWaiting();
             // First, fetch the list of stories
             const storyListResponse = await fetch('./stories.json');
             const stories = await storyListResponse.json();
@@ -115,14 +116,16 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('activate', (event) => {
     const cacheWhitelist = [CACHE_NAME];
     event.waitUntil(
-        caches.keys().then((cacheNames) => {
-            return Promise.all(
+        (async () => {
+            await self.clients.claim();
+            const cacheNames = await caches.keys();
+            await Promise.all(
                 cacheNames.map((cacheName) => {
                     if (cacheWhitelist.indexOf(cacheName) === -1) {
                         return caches.delete(cacheName);
                     }
                 })
             );
-        })
+        })()
     );
 });
