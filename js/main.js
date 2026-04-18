@@ -292,8 +292,27 @@ function setupEventListeners() {
         { element: dom.btnGameMode, event: 'click', handler: () => GameUI.openGameSetSelector() },
         { element: dom.gameSetSelectXBtn, event: 'click', handler: () => dom.gameSetSelectModal.classList.add('hidden') },
         { element: dom.settingsVoiceSelection, event: 'change', handler: (e) => {
-            localStorage.setItem(VoiceManager.VOICE_PREF_KEY, e.target.value);
-            toastManager.show('Voice preference saved!', 'success');
+            const voiceName = e.target.value;
+            localStorage.setItem(VoiceManager.VOICE_PREF_KEY, voiceName);
+            toastManager.show('Voice saved!', 'success');
+            
+            if (voiceName) {
+                const funPhrases = [
+                    "How now brown cow!",
+                    "Peter Piper picked a peck of pickled peppers.",
+                    "She sells seashells by the seashore.",
+                    "I am ready to help you read today!",
+                    "A big blue bear baked a batch of bread.",
+                    "Fuzzy Wuzzy was a bear, Fuzzy Wuzzy had no hair.",
+                    "I scream, you scream, we all scream for ice cream!",
+                    "Betty Botter bought some butter.",
+                    "Six slippery snails slid slowly seaward.",
+                    "Red lorry, yellow lorry, red lorry, yellow lorry.",
+                    "Double bubble gum, bubbles double."
+                ];
+                const randomPhrase = funPhrases[Math.floor(Math.random() * funPhrases.length)];
+                VoiceManager.speakText(randomPhrase);
+            }
         }},
         { element: dom.gameSetSelectList, event: 'click', handler: (e) => GameUI.handleGameSetSelection(e) },
         { element: dom.confirmGameStartBtn, event: 'click', handler: () => GameUI.startSelectedGame() },
@@ -336,8 +355,15 @@ function setupEventListeners() {
         const index = parseInt(card.dataset.index);
         
         if (gameManager.handleChoice(word, index)) {
+            GameUI.triggerCorrectEffect(card);
             card.classList.add('flipped');
-            setTimeout(() => GameUI.renderGameGrid(), 800);
+            setTimeout(() => {
+                GameUI.renderGameGrid();
+                // Only speak the next word if the game is still active (hasn't ended)
+                if (gameManager.state.active) {
+                    VoiceManager.speakText(gameManager.state.targetWord);
+                }
+            }, 2000);
         }
     });
 

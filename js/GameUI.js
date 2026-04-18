@@ -58,6 +58,18 @@ export function renderGameGrid() {
 }
 
 /**
+ * Triggers a random visual reward effect on a correct card.
+ * @param {HTMLElement} cardElement 
+ */
+export function triggerCorrectEffect(cardElement) {
+    const effects = ['reward-jump', 'reward-shake', 'reward-glow', 'reward-spin-mini'];
+    const effect = effects[Math.floor(Math.random() * effects.length)];
+    
+    cardElement.classList.add(effect);
+    // No need to remove it as the card is about to be re-rendered/flipped anyway
+}
+
+/**
  * Handles the visual celebration when a game is completed.
  */
 export function startCelebration(score, time, errors) {

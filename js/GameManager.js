@@ -35,6 +35,7 @@ export class GameManager {
         this.state.gridWords = this.state.wordPool.splice(0, initialSize);
         
         this.pickNextTarget();
+        this.speakFn(this.state.targetWord);
     }
 
     pickNextTarget() {
@@ -45,7 +46,6 @@ export class GameManager {
         
         const available = this.state.gridWords.filter(w => w !== null);
         this.state.targetWord = available[Math.floor(Math.random() * available.length)];
-        this.speakFn(this.state.targetWord);
     }
 
     handleChoice(word, index) {

@@ -881,3 +881,33 @@ header h1 {
     border: 3px solid var(--primary-hover);
     background-color: var(--item-hover-bg);
 }
+
+/* --- Game Reward Animations --- */
+@keyframes reward-jump {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-30px) scale(1.1); }
+}
+.reward-jump { animation: reward-jump 2s ease; }
+
+@keyframes reward-shake {
+    0%, 100% { transform: rotate(0); }
+    25% { transform: rotate(10deg); }
+    75% { transform: rotate(-10deg); }
+}
+.reward-shake { animation: reward-shake 0.4s ease 5; }
+
+@keyframes reward-glow {
+    0%, 100% { box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    50% { 
+        box-shadow: 0 0 30px var(--highlight-color);
+        background-color: var(--highlight-color);
+    }
+}
+.reward-glow .card-front { animation: reward-glow 2s ease; }
+
+@keyframes reward-spin-mini {
+    0% { transform: rotate(0) scale(1); }
+    50% { transform: rotate(180deg) scale(1.2); }
+    100% { transform: rotate(360deg) scale(1); }
+}
+.reward-spin-mini { animation: reward-spin-mini 2s ease; }
