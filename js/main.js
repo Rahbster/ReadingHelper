@@ -339,9 +339,9 @@ function setupEventListeners() {
     });
 
     // Press and hold logic for syllable pop-up
-    dom.storyDisplay.addEventListener('mousedown', handlePressStart);
-    dom.storyDisplay.addEventListener('touchstart', handlePressStart, { passive: true });
-    dom.storyDisplay.addEventListener('touchmove', handleTouchMove, { passive: true });
+    dom.storyDisplay.addEventListener('pointerdown', handlePressStart);
+    dom.storyDisplay.addEventListener('pointermove', handlePointerMove);
+    dom.storyDisplay.addEventListener('pointercancel', handlePressEnd);
     dom.storyDisplay.addEventListener('contextmenu', (e) => {
         // Prevent the system context menu on speakable words to allow the custom long-press syllable popup
         if (e.target.closest('.speakable-word')) e.preventDefault();
@@ -374,8 +374,7 @@ function setupEventListeners() {
     });
 
     // Add listeners to the window to catch the end of a press anywhere
-    window.addEventListener('mouseup', handlePressEnd);
-    window.addEventListener('touchend', handlePressEnd);
+    window.addEventListener('pointerup', handlePressEnd);
 }
 
 
@@ -1167,11 +1166,8 @@ function handlePressStart(event) {
     activeWordElement = event.target.closest('.speakable-word');
     if (!activeWordElement) return;
 
-    // Store starting coordinates for touch events to differentiate between a tap and a scroll
-    if (event.type === 'touchstart') {
-        touchStartX = event.touches[0].clientX;
-        touchStartY = event.touches[0].clientY;
-    }
+    touchStartX = event.clientX;
+    touchStartY = event.clientY;
 
     isLongPress = false; // Reset flag
     popupWasShown = false; // Reset this flag on every new press
@@ -1183,17 +1179,15 @@ function handlePressStart(event) {
 }
 
 /**
- * Handles touch movement to detect scrolling.
- * If the finger moves more than a small threshold, we assume the user is scrolling
- * and cancel the tap/long-press timers.
- * @param {TouchEvent} event 
+ * Handles movement to detect dragging/scrolling.
+ * If the pointer moves more than a small threshold, we cancel the tap/long-press.
+ * @param {PointerEvent} event 
  */
-function handleTouchMove(event) {
+function handlePointerMove(event) {
     if (!pressTimer || !activeWordElement) return;
 
-    const touch = event.touches[0];
-    const deltaX = Math.abs(touch.clientX - touchStartX);
-    const deltaY = Math.abs(touch.clientY - touchStartY);
+    const deltaX = Math.abs(event.clientX - touchStartX);
+    const deltaY = Math.abs(event.clientY - touchStartY);
 
     // Threshold of 10 pixels to distinguish a tap from a scroll/swipe
     if (deltaX > 10 || deltaY > 10) {
@@ -1204,7 +1198,7 @@ function handleTouchMove(event) {
 }
 
 /**
- * Handles the end of a press (mouseup or touchend) anywhere on the page.
+ * Handles the end of a press anywhere on the page.
  * @param {Event} event The mouseup or touchend event.
  */
 function handlePressEnd(event) {

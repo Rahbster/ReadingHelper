@@ -9,6 +9,17 @@ let currentlySpeakingElement = null;
 let currentUtterance = null;
 
 /**
+ * Warms up the speech engine to satisfy browser interaction requirements.
+ */
+export function warmUp() {
+    if ('speechSynthesis' in window && !window.speechSynthesis.speaking) {
+        const u = new SpeechSynthesisUtterance('');
+        u.volume = 0;
+        window.speechSynthesis.speak(u);
+    }
+}
+
+/**
  * Uses the Web Speech API to read text aloud.
  * @param {string} textToSpeak - The text to be spoken.
  * @param {HTMLElement} [elementToHighlight] - Optional element to highlight during speech.

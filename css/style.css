@@ -219,9 +219,11 @@ header h1 {
     border-radius: 4px;
 }
 
-.speakable-word:hover {
-    background-color: var(--highlight-color);
-    color: var(--text-color);
+@media (hover: hover) {
+    .speakable-word:hover {
+        background-color: var(--highlight-color);
+        color: var(--text-color);
+    }
 }
 
 .speaking {

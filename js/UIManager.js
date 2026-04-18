@@ -1,3 +1,5 @@
+import * as VoiceManager from './VoiceManager.js';
+
 export class UIManager {
     constructor(dom, chatManager, toastManager) {
         this.dom = dom;
@@ -23,6 +25,8 @@ export class UIManager {
     }
 
     openNav() {
+        // Unlock speech synthesis on the first physical interaction with the menu
+        VoiceManager.warmUp();
         this.dom.sidenav.style.width = "280px";
         this.dom.overlay.style.display = "block";
         // Populate settings name when opening nav
