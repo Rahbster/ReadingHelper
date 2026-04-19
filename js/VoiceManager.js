@@ -14,7 +14,7 @@ const HIGH_QUALITY_MARKERS = ['Natural', 'Google', 'Premium', 'Enhanced', 'Siri'
  * Helper to identify high-quality voices across different platforms.
  * @param {SpeechSynthesisVoice} v 
  */
-const isHighQuality = (v) => HIGH_QUALITY_MARKERS.some(marker => v.name.includes(marker));
+const isHighQuality = (v) => HIGH_QUALITY_MARKERS.some(marker => v.name.toLowerCase().includes(marker.toLowerCase()));
 
 /**
  * Warms up the speech engine to satisfy browser interaction requirements.
@@ -138,9 +138,14 @@ export function populateVoiceList(selectElement) {
     const seenNames = new Set();
 
     const displayVoices = voices.filter(v => {
-                                    if (!v.lang.toLowerCase().startsWith('en')) return false;
-                                    if (seenNames.has(v.name)) return false;
-                                    seenNames.add(v.name);
+                                    const lang = v.lang.toLowerCase().replace('_', '-');
+                                    if (!lang.startsWith('en')) return false;
+                                    
+                                    // Use a composite key of name and lang to allow different regional 
+                                    // variants of the same voice (like Siri) to appear.
+                                    const key = `${v.name}-${lang}`;
+                                    if (seenNames.has(key)) return false;
+                                    seenNames.add(key);
                                     return true;
                                 })
                                 .sort((a, b) => {
