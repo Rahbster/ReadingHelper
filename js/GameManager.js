@@ -8,6 +8,7 @@ export class GameManager {
             active: false,
             wordPool: [],
             gridWords: [],
+            totalWords: 0,
             targetWord: null,
             startTime: 0,
             errors: 0,
@@ -25,6 +26,7 @@ export class GameManager {
         const count = wordSet.sampleSize || allWords.length;
         
         this.state.wordPool = this._shuffle([...allWords]).slice(0, count);
+        this.state.totalWords = this.state.wordPool.length;
         this.state.active = true;
         this.state.startTime = Date.now();
         this.state.errors = 0;
@@ -75,7 +77,7 @@ export class GameManager {
 
     calculateScore(timeSeconds) {
         const { threshold, penalty, wrongPenalty } = this.state.config;
-        const wordCount = (this.state.config.gridSize[0] * this.state.config.gridSize[1]) + this.state.wordPool.length;
+        const wordCount = this.state.totalWords || (this.state.config.gridSize[0] * this.state.config.gridSize[1]);
         
         const perfectionBasis = wordCount * threshold;
         let finalScore = perfectionBasis * 10; // Scale it up

@@ -15,6 +15,16 @@ export function setMetadata(data) { aiImageMetadata = data || {}; }
 export function clearMetadata() { aiImageMetadata = {}; }
 
 /**
+ * Ensures a consistent numeric seed across all images in the current story
+ * to maintain visual and character continuity.
+ */
+function getOrInitStorySeed() {
+    const existingSeed = Object.values(aiImageMetadata).find(m => m && typeof m.seed === 'number')?.seed;
+    if (existingSeed !== undefined) return existingSeed;
+    return Math.floor(Math.random() * 1000000);
+}
+
+/**
  * Uses Gemini to read the full story and the selection, returning a 
  * context-aware visual prompt.
  */
@@ -37,7 +47,7 @@ async function refinePrompt(fullStory, selectedText, hiddenDetails, styleGuide) 
                 
                 MANDATORY ART STYLE: Every prompt MUST fiercely enforce the following aesthetic: "Lush watercolor children's book illustration, whimsical, soft atmospheric lighting, highly detailed, vibrant, magical, Studio Ghibli inspired, masterpiece, 8k resolution."
                 
-                Ensure character appearances and settings are consistent with the story context and STYLE GUIDE.
+                Ensure character appearances (hair color, clothing, species, age) and settings are explicitly repeated and consistent with the story context and STYLE GUIDE.
                 If a STYLE GUIDE exists, prioritize its description of characters and art style to maintain continuity.
                 
                 Output ONLY the refined prompt text without any labels, quotes, or conversational filler. 
@@ -95,7 +105,7 @@ export async function illustrateStory(storyText, updateInputCallback, sessionIma
                 Guidelines:
                 1. Keep the original story text exactly as is.
                 2. Insert a tag every few paragraphs.
-                3. Maintain character and setting consistency throughout all descriptions.
+                3. Maintain strict character and setting consistency throughout all descriptions: explicitly repeat each character's exact physical traits (hair, clothing, colors, species) in every single [IMAGE: ...] tag where they appear, because the image generator has no memory of previous tags.
                 4. Each visual description should be a detailed paragraph (under 1000 characters).
                 5. MANDATORY ART STYLE: Every description MUST include the following aesthetic phrasing: "Lush watercolor children's book illustration, whimsical, soft atmospheric lighting, highly detailed, vibrant, magical, Studio Ghibli inspired, masterpiece, 8k resolution."
                 
@@ -122,11 +132,12 @@ export async function illustrateStory(storyText, updateInputCallback, sessionIma
         let illustratedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (illustratedText) {
+            const storySeed = getOrInitStorySeed();
             // Process the new prompts into unique file identifiers
             const imageRegex = /\[IMAGE:\s*(.*?)\s*\]/g;
             illustratedText = illustratedText.replace(imageRegex, (match, promptText) => {
                 const fileName = `ai-gen-${Date.now()}-${Math.floor(Math.random() * 1000)}.png`;
-                aiImageMetadata[fileName] = { prompt: promptText.trim(), status: 'pending' };
+                aiImageMetadata[fileName] = { prompt: promptText.trim(), status: 'pending', seed: storySeed };
                 imageGenerationQueue.push(fileName);
                 return `[IMAGE: ${fileName}]`;
             });
@@ -156,6 +167,7 @@ export async function insertMagicImage(storyText, start, end, hiddenDetails, upd
 
     // Find the first successful prompt to act as a Visual Style Guide for continuity
     const styleGuide = Object.values(aiImageMetadata).find(m => m.status === 'success')?.prompt;
+    const storySeed = getOrInitStorySeed();
 
     // Get the refined, context-aware prompt
     const visualPrompt = await refinePrompt(storyText, selectedText, hiddenDetails, styleGuide);
@@ -165,7 +177,8 @@ export async function insertMagicImage(storyText, start, end, hiddenDetails, upd
     // Create the record
     aiImageMetadata[fileName] = { 
         prompt: visualPrompt, 
-        status: 'pending' 
+        status: 'pending',
+        seed: storySeed
     };
 
     // Update the story text immediately with the tag
@@ -206,21 +219,44 @@ export async function testGeminiConnection(apiKey, statusEl) {
     } catch (e) { console.error("[AI-GEN] Gemini Connection Error:", e); if (statusEl) statusEl.textContent = '❌'; }
 }
 
+/**
+ * Helper to convert a fetched Blob into a Base64 Data URL for offline IndexedDB persistence.
+ */
+function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
 async function tryPollinationsGeneration(fileName, sessionImages, localImageUrls) {
     const metadata = aiImageMetadata[fileName];
     const encodedPrompt = encodeURIComponent(metadata.prompt);
-    const seed = Math.floor(Math.random() * 1000000);
+    const seed = metadata.seed ?? getOrInitStorySeed();
+    metadata.seed = seed;
     const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&nologo=true`;
     
-    console.log(`[AI-GEN] Requesting Pollinations generation: ${url}`);
+    console.log(`[AI-GEN] Requesting Pollinations generation (seed: ${seed}): ${url}`);
 
     try {
-        sessionImages[fileName] = url;
-        localImageUrls[fileName] = url;
-        await new Promise(r => setTimeout(r, 2000));
+        const response = await fetch(url);
+        if (!response.ok) {
+            metadata.errorCode = response.status;
+            metadata.errorMessage = `HTTP ${response.status}`;
+            throw new Error(`Pollinations HTTP error ${response.status}`);
+        }
+        const blob = await response.blob();
+        const base64Data = await blobToBase64(blob);
+        sessionImages[fileName] = base64Data;
+        localImageUrls[fileName] = base64Data;
         metadata.status = 'success';
+        delete metadata.errorCode;
+        delete metadata.errorMessage;
     } catch (err) {
         console.error(`[AI-GEN] Pollinations Generation failed:`, err);
+        metadata.errorMessage = metadata.errorMessage || err.message || 'Image generation failed';
         metadata.status = 'failed';
     }
 }
@@ -241,12 +277,14 @@ async function generateAiImage(fileName, sessionImages, localImageUrls) {
 }
 
 /**
- * Resumes generation for any images that are still in 'pending' or 'failed' status.
+ * Resumes generation for any images that are still in 'pending' or 'failed' status,
+ * or that were previously marked 'success' without persisted offline image data.
  */
 export function resumeQueue(sessionImages, localImageUrls) {
     Object.keys(aiImageMetadata).forEach(fileName => {
         const status = aiImageMetadata[fileName].status;
-        if (status === 'pending' || status === 'failed') {
+        const hasOfflineData = Boolean(sessionImages[fileName] && sessionImages[fileName].startsWith('data:'));
+        if (status === 'pending' || status === 'failed' || (status === 'success' && !hasOfflineData)) {
             if (!imageGenerationQueue.includes(fileName)) {
                 imageGenerationQueue.push(fileName);
             }
@@ -262,6 +300,8 @@ export function retryGeneration(fileName, sessionImages, localImageUrls) {
     const metadata = aiImageMetadata[fileName];
     if (!metadata) return;
 
+    // Assign a fresh seed if the user explicitly retries an image they didn't like or that failed
+    metadata.seed = Math.floor(Math.random() * 1000000);
     metadata.status = 'pending';
     if (!imageGenerationQueue.includes(fileName)) {
         imageGenerationQueue.push(fileName);

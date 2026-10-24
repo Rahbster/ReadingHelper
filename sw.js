@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reading-helper-cache-v14';
+const CACHE_NAME = 'reading-helper-cache-v15';
 // App Shell - the core files for the app's functionality
 const appShellFiles = [
     './',
@@ -12,6 +12,7 @@ const appShellFiles = [
     './js/ChatManager.js',
     './js/UIManager.js',
     './js/VoiceManager.js',
+    './js/SpeechRecognitionManager.js',
     './js/GameUI.js',
     './js/storage-helper.js',
     './js/peerjs.min.js',

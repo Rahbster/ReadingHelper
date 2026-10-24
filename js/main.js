@@ -983,6 +983,126 @@ function renderStory() {
     updateActiveHighlight();
 }
 
+const NUMBER_WORDS = {
+    '0': 'zero', '1': 'one', '2': 'two', '3': 'three', '4': 'four',
+    '5': 'five', '6': 'six', '7': 'seven', '8': 'eight', '9': 'nine',
+    '10': 'ten', '11': 'eleven', '12': 'twelve'
+};
+
+const HOMOPHONE_GROUPS = [
+    ['to', 'too', 'two', '2'],
+    ['there', 'their', "they're", 'theyre'],
+    ['your', "you're", 'youre'],
+    ['its', "it's"],
+    ['for', 'four', 'fore', '4'],
+    ['one', 'won', '1'],
+    ['eight', 'ate', '8'],
+    ['be', 'bee'],
+    ['see', 'sea'],
+    ['hear', 'here'],
+    ['no', 'know'],
+    ['knew', 'new'],
+    ['knight', 'night'],
+    ['right', 'write'],
+    ['read', 'red'],
+    ['wear', 'where'],
+    ['by', 'buy', 'bye'],
+    ['hour', 'our'],
+    ['son', 'sun'],
+    ['wood', 'would'],
+    ['flower', 'flour'],
+    ['bear', 'bare'],
+    ['pair', 'pear'],
+    ['tail', 'tale'],
+    ['week', 'weak'],
+    ['meet', 'meat'],
+    ['hole', 'whole'],
+    ['peace', 'piece']
+];
+
+const HOMOPHONE_MAP = new Map();
+HOMOPHONE_GROUPS.forEach(group => {
+    group.forEach(w => HOMOPHONE_MAP.set(w, group));
+});
+
+/**
+ * Generates a lightweight phonetic signature so homophones and child-like
+ * pronunciations match accurately during Speech-to-Text.
+ */
+function getPhoneticCode(word) {
+    let w = (NUMBER_WORDS[word] || word).toLowerCase().replace(/[^a-z]/g, '');
+    if (!w) return '';
+    return w
+        .replace(/^kn/, 'n')
+        .replace(/^wr/, 'r')
+        .replace(/^wh/, 'w')
+        .replace(/ph/g, 'f')
+        .replace(/ght/g, 't')
+        .replace(/ck/g, 'k')
+        .replace(/([a-z])\1+/g, '$1');
+}
+
+/**
+ * Computes Levenshtein edit distance between two short strings.
+ */
+function editDistance(a, b) {
+    if (a === b) return 0;
+    const matrix = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= b.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= b.length; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            matrix[i][j] = Math.min(
+                matrix[i - 1][j] + 1,
+                matrix[i][j - 1] + 1,
+                matrix[i - 1][j - 1] + cost
+            );
+        }
+    }
+    return matrix[a.length][b.length];
+}
+
+/**
+ * Determines whether a spoken word matches an expected story word using
+ * exact match, custom story pronunciations, homophones, or phonetic/edit similarity.
+ */
+function isWordsMatch(spokenRaw, expectedRaw) {
+    const spoken = cleanText(spokenRaw);
+    const expected = cleanText(expectedRaw);
+    if (!spoken || !expected) return false;
+    if (spoken === expected) return true;
+
+    // Normalize digits (e.g., STT returns "3" when story has "three")
+    const normSpoken = NUMBER_WORDS[spoken] || spoken;
+    const normExpected = NUMBER_WORDS[expected] || expected;
+    if (normSpoken === normExpected) return true;
+
+    // Check story-specific pronunciation overrides
+    if (currentPronunciations[expected] && cleanText(currentPronunciations[expected]) === spoken) {
+        return true;
+    }
+
+    // Check known homophone sets
+    const homophones = HOMOPHONE_MAP.get(normExpected);
+    if (homophones && homophones.includes(normSpoken)) {
+        return true;
+    }
+
+    // Check phonetic code equivalence for words of 3+ chars
+    const pSpoken = getPhoneticCode(normSpoken);
+    const pExpected = getPhoneticCode(normExpected);
+    if (pSpoken.length >= 3 && pSpoken === pExpected) {
+        return true;
+    }
+
+    // Allow 1-character edit distance on longer words (5+ chars) to forgive minor STT variance
+    if (normExpected.length >= 5 && normSpoken.length >= 4 && editDistance(normSpoken, normExpected) <= 1) {
+        return true;
+    }
+
+    return false;
+}
+
 /**
  * Core logic for the Sequential Word Matching.
  */
@@ -1012,7 +1132,7 @@ function handleSpeechResult({ final, interim }) {
 
         // 1. Check current word (Success)
         const currentExpected = cleanText(storyWordElements[readingPointer].textContent);
-        if (cleanedSpoken === currentExpected) {
+        if (isWordsMatch(cleanedSpoken, currentExpected)) {
             markWord(readingPointer, 'correct');
             readingPointer++;
             updateActiveHighlight();
@@ -1022,7 +1142,7 @@ function handleSpeechResult({ final, interim }) {
         // 2. Check Backtracking (Correction window: 3 words back)
         const backLimit = Math.max(0, readingPointer - 3);
         for (let i = readingPointer - 1; i >= backLimit; i--) {
-            if (cleanedSpoken === cleanText(storyWordElements[i].textContent)) {
+            if (isWordsMatch(cleanedSpoken, storyWordElements[i].textContent)) {
                 markWord(i, 'correct');
                 // Clear error/skipped marks for everything we just "re-read"
                 for (let j = i + 1; j < readingPointer; j++) {
@@ -1037,7 +1157,7 @@ function handleSpeechResult({ final, interim }) {
         // 3. Check Look Ahead (Skipping window: 5 words ahead)
         const forwardLimit = Math.min(readingPointer + 5, storyWordElements.length);
         for (let i = readingPointer + 1; i < forwardLimit; i++) {
-            if (cleanedSpoken === cleanText(storyWordElements[i].textContent)) {
+            if (isWordsMatch(cleanedSpoken, storyWordElements[i].textContent)) {
                 // User skipped some words
                 for (let j = readingPointer; j < i; j++) {
                     markWord(j, 'skipped');
@@ -1061,55 +1181,6 @@ function handleSpeechResult({ final, interim }) {
             VoiceManager.speakText("You read the whole story! Well done!");
         }, 500);
     }
-}
-
-/**
- * A simple algorithm to break a word into syllables.
- * This is a heuristic and may not be perfect for all English words.
- * @param {string} word The word to syllabify.
- * @returns {string} The word with dashes between syllables.
- */
-function getSyllables(word) {
-    const lowerCaseWord = word.toLowerCase();
-    // Prioritize the phonetic dictionary first.
-    if (currentPhonetics[lowerCaseWord]) {
-        return currentPhonetics[lowerCaseWord];
-    }
-
-    // This is a more robust heuristic for syllable counting in English.
-    word = word.toLowerCase();
-    if (word.length <= 3) {
-        return word;
-    }
-
-    const VOWELS = /[aeiouy]{1,2}/g;
-    const matches = word.match(VOWELS);
-
-    if (!matches || matches.length <= 1) {
-        return word; // Cannot be split if there's one vowel group or less
-    }
-
-    // A simple heuristic: split between consonants surrounded by vowels.
-    // VCV -> V-CV (e.g., "a-way")
-    // VCCV -> VC-CV (e.g., "win-ter")
-    let result = [];
-    let lastIndex = 0;
-
-    word.replace(/([aeiouy])([bcdfghjklmnpqrstvwxz]{2,})([aeiouy])/g, (match, p1, p2, p3, offset) => {
-        result.push(word.substring(lastIndex, offset + 1));
-        result.push(p2.substring(0, 1));
-        lastIndex = offset + 1 + 1;
-    });
-
-    if (lastIndex < word.length) {
-        result.push(word.substring(lastIndex));
-    }
-
-    // This is a simplified approach; for a truly accurate result, a dictionary-based method is needed.
-    // For now, we'll join what we have. This logic is much better than before.
-    // A more visual split can be achieved by re-inserting dashes.
-    return word.replace(/([aeiouy])([bcdfghjklmnpqrstvwxz])([aeiouy])/g, '$1-$2$3')
-               .replace(/([bcdfghjklmnpqrstvwxz])([bcdfghjklmnpqrstvwxz])([aeiouy])/g, '$1-$2$3');
 }
 
 /**
@@ -1828,7 +1899,8 @@ async function saveUserStory() {
     const pronunciationsContent = JSON.stringify(pronunciationsObj, null, 2);
 
     try {
-        const title = prompt('Please enter a title for your story:', currentStoryId ? storyManager.getUserStoryById(currentStoryId)?.title : '');
+        const existingStory = currentStoryId ? await storyManager.getUserStoryById(currentStoryId) : null;
+        const title = prompt('Please enter a title for your story:', existingStory?.title || '');
         if (!title) return; // User cancelled
 
         const story = {
@@ -1842,9 +1914,8 @@ async function saveUserStory() {
         if (currentStoryId) {
             story.id = currentStoryId;
             // Preserve existing images if not overwritten
-            const existing = await storyManager.getUserStoryById(currentStoryId);
-            if (existing && existing.images) {
-                story.images = { ...existing.images };
+            if (existingStory && existingStory.images) {
+                story.images = { ...existingStory.images };
             }
         }
 
