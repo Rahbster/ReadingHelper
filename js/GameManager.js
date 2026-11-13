@@ -1,13 +1,63 @@
+/**
+ * GameManager.js
+ * Pure logic class managing Word Match state, minimal-pair distractor grouping,
+ * mastered word tracking, and scoring.
+ */
+
+export const MINIMAL_PAIR_GROUPS = [
+    ['tree', 'three', 'free'],
+    ['was', 'saw'],
+    ['on', 'no'],
+    ['for', 'from', 'four'],
+    ['there', 'where', 'here', 'were'],
+    ['went', 'want'],
+    ['then', 'than', 'them'],
+    ['big', 'pig', 'dig'],
+    ['cat', 'hat', 'bat', 'mat'],
+    ['house', 'mouse'],
+    ['look', 'book', 'took'],
+    ['chip', 'ship'],
+    ['thin', 'chin', 'shin'],
+    ['bear', 'pear', 'wear'],
+    ['through', 'though', 'thought'],
+    ['quiet', 'quite'],
+    ['stop', 'spot'],
+    ['felt', 'left'],
+    ['who', 'how'],
+    ['now', 'own'],
+    ['bed', 'bad']
+];
+
+const MINIMAL_PAIR_MAP = new Map();
+MINIMAL_PAIR_GROUPS.forEach((group) => {
+    group.forEach((w) => MINIMAL_PAIR_MAP.set(w, group));
+});
+
+/**
+ * Returns minimal-pair partners for a given word (excluding itself).
+ * @param {string} word
+ * @returns {string[]}
+ */
+export function getMinimalPairPartners(word) {
+    if (!word) return [];
+    const lower = word.toLowerCase().trim();
+    const group = MINIMAL_PAIR_MAP.get(lower);
+    return group ? group.filter((w) => w !== lower) : [];
+}
+
 export class GameManager {
-    constructor(options) {
+    constructor(options = {}) {
         this.toastManager = options.toastManager;
-        this.speakFn = options.speakFn;
-        this.onGameOver = options.onGameOver;
-        
+        this.speakFn = options.speakFn || (() => {});
+        this.onGameOver = options.onGameOver || (() => {});
+        this.onCorrect = options.onCorrect || (() => {});
+        this.onWrong = options.onWrong || (() => {});
+
         this.state = {
             active: false,
             wordPool: [],
             gridWords: [],
+            masteredWords: [],
             totalWords: 0,
             targetWord: null,
             startTime: 0,
@@ -21,48 +71,125 @@ export class GameManager {
         };
     }
 
-    start(wordSet, config) {
-        const allWords = wordSet.words || [];
-        const count = wordSet.sampleSize || allWords.length;
-        
-        this.state.wordPool = this._shuffle([...allWords]).slice(0, count);
+    start(wordSet, config = {}) {
+        const rawWords = Array.isArray(wordSet.words) ? wordSet.words : [];
+        const uniqueWords = [...new Set(rawWords.map((w) => String(w).trim()).filter(Boolean))];
+        const count = Math.min(wordSet.sampleSize || uniqueWords.length, uniqueWords.length);
+
+        const selected = this._selectWithMinimalPairs(uniqueWords, count);
+
+        this.state.wordPool = selected;
         this.state.totalWords = this.state.wordPool.length;
+        this.state.masteredWords = [];
         this.state.active = true;
         this.state.startTime = Date.now();
         this.state.errors = 0;
         this.state.config = { ...this.state.config, ...config };
 
-        // Fill initial grid
         const initialSize = this.state.config.gridSize[0] * this.state.config.gridSize[1];
-        this.state.gridWords = this.state.wordPool.splice(0, initialSize);
-        
+        this.state.gridWords = this._shuffle(this.state.wordPool.splice(0, initialSize));
+
         this.pickNextTarget();
-        this.speakFn(this.state.targetWord);
+        if (this.state.targetWord) {
+            this.speakFn(this.state.targetWord);
+        }
+    }
+
+    stop() {
+        this.state.active = false;
+    }
+
+    /**
+     * Selects up to `count` words while keeping minimal pairs grouped near each other
+     * so similar-looking/similar-sounding words appear on the board together.
+     */
+    _selectWithMinimalPairs(words, count) {
+        const shuffled = this._shuffle([...words]);
+        const lowerToOriginal = new Map();
+        shuffled.forEach((w) => lowerToOriginal.set(w.toLowerCase(), w));
+
+        const chosen = [];
+        const usedLower = new Set();
+
+        for (const w of shuffled) {
+            if (chosen.length >= count) break;
+            const lower = w.toLowerCase();
+            if (usedLower.has(lower)) continue;
+
+            chosen.push(w);
+            usedLower.add(lower);
+
+            const partners = getMinimalPairPartners(lower);
+            for (const partnerLower of partners) {
+                if (chosen.length >= count) break;
+                if (!usedLower.has(partnerLower) && lowerToOriginal.has(partnerLower)) {
+                    chosen.push(lowerToOriginal.get(partnerLower));
+                    usedLower.add(partnerLower);
+                }
+            }
+        }
+
+        return chosen;
+    }
+
+    /**
+     * Pulls the next replacement word from `wordPool`, preferring a minimal-pair partner
+     * of a word already visible on the grid when available.
+     */
+    _drawNextPoolWord() {
+        if (this.state.wordPool.length === 0) return null;
+
+        const activeGridSet = new Set(
+            this.state.gridWords.filter(Boolean).map((w) => w.toLowerCase())
+        );
+
+        const partnerIdx = this.state.wordPool.findIndex((candidate) => {
+            const partners = getMinimalPairPartners(candidate);
+            return partners.some((p) => activeGridSet.has(p));
+        });
+
+        if (partnerIdx > -1) {
+            return this.state.wordPool.splice(partnerIdx, 1)[0];
+        }
+        return this.state.wordPool.shift();
     }
 
     pickNextTarget() {
-        if (this.state.gridWords.filter(w => w !== null).length === 0) {
+        const available = this.state.gridWords.filter((w) => w !== null);
+        if (available.length === 0) {
             this.endGame();
             return;
         }
-        
-        const available = this.state.gridWords.filter(w => w !== null);
-        this.state.targetWord = available[Math.floor(Math.random() * available.length)];
+
+        // Slightly favor words on the grid that currently have a minimal-pair distractor visible
+        const availableLower = new Set(available.map((w) => w.toLowerCase()));
+        const pairedCandidates = available.filter((w) =>
+            getMinimalPairPartners(w).some((p) => availableLower.has(p))
+        );
+
+        const poolToPick = pairedCandidates.length > 0 && Math.random() < 0.7
+            ? pairedCandidates
+            : available;
+
+        this.state.targetWord = poolToPick[Math.floor(Math.random() * poolToPick.length)];
     }
 
     handleChoice(word, index) {
         if (!this.state.active) return false;
 
         if (word === this.state.targetWord) {
-            // Correct
-            const nextFromPool = this.state.wordPool.length > 0 ? this.state.wordPool.shift() : null;
+            this.state.masteredWords.push(word);
+            this.onCorrect(word, index);
+            const nextFromPool = this._drawNextPoolWord();
             this.state.gridWords[index] = nextFromPool;
             this.pickNextTarget();
             return true;
         } else {
-            // Wrong
             this.state.errors++;
-            this.toastManager.show("Try again!", "error", 1000);
+            this.onWrong(word, index);
+            if (this.toastManager) {
+                this.toastManager.show('Try again!', 'error', 1000);
+            }
             this.speakFn(this.state.targetWord);
             return false;
         }
@@ -72,22 +199,20 @@ export class GameManager {
         this.state.active = false;
         const timeTaken = (Date.now() - this.state.startTime) / 1000;
         const score = this.calculateScore(timeTaken);
-        this.onGameOver(score, timeTaken, this.state.errors);
+        this.onGameOver(score, timeTaken, this.state.errors, [...this.state.masteredWords]);
     }
 
     calculateScore(timeSeconds) {
         const { threshold, penalty, wrongPenalty } = this.state.config;
         const wordCount = this.state.totalWords || (this.state.config.gridSize[0] * this.state.config.gridSize[1]);
-        
-        const perfectionBasis = wordCount * threshold;
-        let finalScore = perfectionBasis * 10; // Scale it up
 
-        // Time penalty
+        const perfectionBasis = wordCount * threshold;
+        let finalScore = perfectionBasis * 10;
+
         if (timeSeconds > perfectionBasis) {
             finalScore -= (timeSeconds - perfectionBasis) * penalty;
         }
 
-        // Error penalty
         finalScore -= this.state.errors * wrongPenalty;
 
         return Math.max(0, Math.round(finalScore));

@@ -17,15 +17,9 @@ export function initialize(prefix, config = {}) {
 
 /**
  * Initializes the PeerJS object for the host and sets up event listeners.
- * @param {function} onOpen - Callback function when the peer connection is open, receives the peer ID.
- * @param {function} onConnect - Callback function when a data connection is established.
- * @param {function} onData - Callback function when data is received.
- * @param {function} onError - Callback function for any PeerJS errors.
- * @param {function} onConnectionChange - Callback function when the number of connections changes.
- * @param {string} [customId] - Optional custom ID to use instead of a random one.
  */
 export function createHost(onOpen, onConnect, onData, onError, onConnectionChange, customId = null) {
-    destroyPeer(); // Ensure any existing peer is destroyed
+    destroyPeer();
     onConnectionChangeCallback = onConnectionChange || (() => {});
     peerId = customId ? `${peerPrefix}${customId}` : `${peerPrefix}${Math.floor(100000 + Math.random() * 900000)}`;
     peer = new Peer(peerId, peerConfig);
@@ -44,22 +38,17 @@ export function createHost(onOpen, onConnect, onData, onError, onConnectionChang
 
     peer.on('error', (err) => {
         console.error('PeerJS Host Error:', err);
-        if (onError) onError(err.type);
+        if (onError) onError(err.type || err);
     });
 }
 
 /**
  * Initializes the PeerJS object for the joiner and connects to a host.
- * @param {string} hostId - The ID of the host to connect to.
- * @param {function} onConnect - Callback function when the data connection is established.
- * @param {function} onData - Callback function when data is received.
- * @param {function} onError - Callback function for any PeerJS errors.
- * @param {function} onConnectionChange - Callback function when the number of connections changes.
  */
 export function joinHost(hostId, onConnect, onData, onError, onConnectionChange) {
-    destroyPeer(); // Ensure any existing peer is destroyed
+    destroyPeer();
     onConnectionChangeCallback = onConnectionChange || (() => {});
-    peer = new Peer(peerConfig); // Joiner gets a random ID from the server
+    peer = new Peer(peerConfig);
 
     peer.on('open', () => {
         console.log('PeerJS Joiner is open. Connecting to host:', hostId);
@@ -72,51 +61,49 @@ export function joinHost(hostId, onConnect, onData, onError, onConnectionChange)
 
     peer.on('error', (err) => {
         console.error('PeerJS Joiner Error:', err);
-        if (onError) onError(err.type);
+        if (onError) onError(err.type || err);
     });
 }
 
-/**
- * Sets up the event listeners for a new data connection.
- * @param {object} conn - The PeerJS connection object.
- * @param {function} onConnect - Callback for connection open.
- * @param {function} onData - Callback for received data.
- */
 function setupConnectionEvents(conn, onConnect, onData) {
     if (!conn) return;
 
     conn.on('open', () => {
         console.log('Data connection is open.');
+        onConnectionChangeCallback(connections.filter((c) => c && c.open).length || connections.length);
         if (onConnect) onConnect();
     });
 
     conn.on('data', (data) => {
-        console.log('Data received:', data);
         if (onData) onData(data);
     });
 
     conn.on('close', () => {
         console.log('Connection closed.');
-        connections = connections.filter(c => c.connectionId !== conn.connectionId);
+        connections = connections.filter((c) => c.connectionId !== conn.connectionId);
         onConnectionChangeCallback(connections.length);
     });
 }
 
 /**
- * Sends data to the connected peer.
+ * Sends data to all open peer connections.
  * @param {object} data - The data object to send.
- * @returns {boolean} - True if data was sent, false otherwise.
+ * @returns {boolean} - True if data was sent to at least one open peer, false otherwise.
  */
 export function sendData(data) {
+    let sent = false;
     if (connections.length > 0) {
-        connections.forEach(conn => {
+        connections.forEach((conn) => {
             if (conn && conn.open) {
                 conn.send(data);
+                sent = true;
             }
         });
     }
-    console.warn('Cannot send data, no open connection.');
-    return false;
+    if (!sent) {
+        console.warn('Cannot send data, no open connection.');
+    }
+    return sent;
 }
 
 /**
@@ -124,7 +111,7 @@ export function sendData(data) {
  */
 export function destroyPeer() {
     if (connections.length > 0) {
-        connections.forEach(conn => conn.close());
+        connections.forEach((conn) => conn.close());
         connections = [];
         onConnectionChangeCallback(0);
     }

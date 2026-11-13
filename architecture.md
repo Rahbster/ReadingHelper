@@ -1,49 +1,36 @@
 # Reading Helper Architecture
 
 ## 📖 Overview
-Reading Helper is a strictly front-end Progressive Web App (PWA) built using HTML5, CSS3, and Vanilla JavaScript (ES6 Modules). By avoiding heavy frontend frameworks, it remains extremely lightweight and fast, making it ideal for mobile devices and educational settings. All heavy lifting is either handled by native browser APIs or delegated to API endpoints.
+Reading Helper is a strictly front-end Progressive Web App (PWA) built using HTML5, CSS3, and Vanilla JavaScript (ES6 Modules). By avoiding heavy frontend frameworks, it remains lightweight and fast, making it ideal for mobile devices and educational settings.
 
 ## 🏗️ Core Architecture Components
 
-The application follows a modular monolith structure on the frontend, breaking down specific functionality into dedicated JavaScript modules.
-
 ### UI & Presentation Layer
-*   **`index.html`**: The single-page shell of the application. It contains all the necessary modal structures, the reading canvas, and the Creator Mode inputs.
-*   **`css/*.css`**: Vanilla CSS providing responsivity and dynamic themes. Utilizes modern features like `100dvh` for full-screen mobile layouts and **CSS Container Queries** for component-level text scaling.
-*   **`js/GameUI.js`**: Handles the visual rendering of the game. Includes logic for orientation-aware grid layouts (3x4 vs 4x3) and canvas-based particle celebrations.
-*   **`js/main.js`**: The main entry point. It orchestrates the story rendering, word tracking, speech synthesis triggers, and syllable heuristic algorithms.
-*   **`js/GameManager.js`**: Pure logic class that manages the state of the Word Match game, including word pooling, shuffling, scoring, and target selection.
-*   **`js/SpeechRecognitionManager.js`**: Manages the Web Speech API's `SpeechRecognition` interface, handling auto-restart for mobile stability and transcript processing.
-*   **`js/UIManager.js`**: Manages all non-essential UI DOM interactions, including toggling modals, handling the sidebar navigation, updating settings, and toggling themes.
+*   **`index.html`**: The single-page shell of the application using semantic HTML5 and native `<dialog>` modals.
+*   **`css/*.css`**: Unified CSS custom-property theming (`[data-theme="dark"]` & `light`), `100dvh` mobile layouts, `prefers-reduced-motion` accessibility, and **CSS Container Queries** (`22cqmin`) for flashcard text scaling.
+*   **`js/main.js`**: Application coordinator wiring views, Story Teller, Karaoke Mode, Creator Mode, and P2P story previews.
+*   **`js/ReaderEngine.js`**: Safe, XSS-hardened story tokenizer and paragraph renderer. Preserves exact character offsets for TTS word boundary synchronization and marks sentence boundaries.
+*   **`js/KaraokeMatcher.js`**: Pure sequential word-alignment engine for Speech-to-Text, supporting homophones, numbers, custom pronunciations, phonetic signatures, Levenshtein edit distance, backtracking, and look-ahead skipping.
+*   **`js/GameManager.js` & `js/GameUI.js`**: Manages Word Match state, Minimal Pairs distractor grouping, personalized "My Tricky Words" rounds, orientation-aware grids (3x4 / 4x3), and mastered-word firework celebrations.
+*   **`js/UIManager.js` & `js/utils/dom-utils.js`**: Manages navigation, unified theme/sound preferences, HTML escaping, non-blocking `<dialog>` prompts/confirmations, and the child-safe Grown-Up Gate.
 
 ### Data & Persistence Layer
-*   **`story-manager.js` & `js/storage-helper.js`**: Manages the loading, saving, and deletion of custom stories. 
-    *   *LocalStorage* is used for lightweight metadata (API keys, "Tricky Words" statistics, user names, and the story list manifest).
-    *   *IndexedDB* is used heavily to store the large Base64 AI-generated illustration assets associated with custom user stories, ensuring the app doesn't hit quota limits.
+*   **`story-manager.js` & `js/storage-helper.js`**: Manages loading, saving, and deletion of custom stories.
+    *   *LocalStorage* stores lightweight metadata (settings, Tricky Words statistics, user names, and story manifests).
+    *   *IndexedDB* (`ReadingHelperAssets`) stores Base64 illustration assets so `localStorage` never hits quota limits.
 
 ### Connectivity & Networking (WebRTC)
-*   **`js/peer-service.js`**: A wrapper for the lightweight `PeerJS` library. It acts as an abstraction layer for establishing WebRTC peer-to-peer data channels between host and joiner devices.
-*   **`js/ChatManager.js`**: Leverages the `peer-service` connection to manage inbound and outbound side-channel chat messages between connected devices.
+*   **`js/peer-service.js` & `js/modals/peer_connection_modal.js`**: Wrapper and modal UI for `PeerJS` WebRTC data channels between host and joiner devices. Incoming stories open in a non-destructive preview banner before saving.
+*   **`js/ChatManager.js`**: Manages side-channel chat messages between connected peers.
 
 ### Artificial Intelligence Layer
-*   **`js/ai-manager.js`**: Contains all the logic for interacting with generative AI.
-    *   **Google Gemini (Primary)**: Analyzes story inputs and injects specific `[IMAGE: {prompt}]` tags based on narrative context. Also powers the "Magic Image" explicit text-highlight feature.
-    *   **Pollinations.ai (Fallback Image Engine)**: Used directly to render the final illustrations using the prompts generated by Gemini, reliably acting as a free fallback for image generation.
-    *   The manager keeps track of generated image metadata across a session (pending, success, failing status) and injects retry logic dynamically into the UI.
+*   **`js/ai-manager.js`**: Interacts with Google Gemini (for story illustration planning and "Magic Image" prompt refinement) and Pollinations.ai (for rendering illustrations with consistent story seeds).
 
 ### Audio & Feedback Layer
-*   **Web Speech API (TTS)**: Powers the "Story Teller" mode. Supports fluid reading, real-time speed adjustments (0.8x - 2.0x), and pause/resume functionality. Includes a prioritized filtering system for high-quality English voices.
-*   **Web Speech API (STT)**: Powers "Karaoke Mode". Uses sequential word matching with a "Reading Pointer", supporting fuzzy logic for skips, backtracking for corrections, and misspoken word detection.
-*   **Web Audio API**: Generates procedural beeps, tones, and celebratory sounds for game feedback without requiring external asset files.
-*   **Haptic API**: Provides vibration feedback for mobile users during game interactions.
+*   **`js/VoiceManager.js`**: Web Speech Synthesis (`TTS`) with `requestAnimationFrame`-coalesced word boundary events, high-quality English voice prioritization, and syllable heuristics.
+*   **`js/SpeechRecognitionManager.js`**: Web Speech Recognition (`STT`) with silent mobile auto-restart and transient-error backoff.
+*   **`js/sound-effects.js`**: Procedural Web Audio chimes, error tones, celebration fanfares, and mobile haptics (`navigator.vibrate`) with a mute toggle.
 
-### Offline & PWA Capabilities
-*   **`sw.js` (Service Worker)**: Intercepts network requests and caches the App Shell (`index.html`, css, icons) as well as default story assets (`stories.json` metadata, `.txt` files) for total offline capability. 
-*   **`manifest.json`**: Provides standard PWA metrics to allow seamless desktop/mobile installation.
-
-## 🔄 Data Flow: Example Action (Reading a Story)
-1. User clicks a story from the modal via `UIManager`.
-2. `main.js` calls `storyManager` to fetch the story (either from static `stories/` origin or IndexedDB).
-3. The raw string is parsed in `main.js`, replacing AI image tags with `<img>` elements linked to Blob URLs.
-4. The remaining text is rendered word-by-word into `<span>` arrays.
-5. Clicking a `<span>` triggers the browser's native `SpeechSynthesis API`.
+### Offline, PWA & Testing
+*   **`sw.js` & `manifest.json`**: Precaches the app shell and WebP story illustrations (`~1.27 MB` total), caches Google Fonts at runtime, and handles query-string PWA shortcuts (`?mode=game`, `?mode=dashboard`) offline.
+*   **`tests/run-tests.mjs`**: Zero-dependency Node ES module unit test suite (`npm test`).

@@ -1,46 +1,24 @@
 # Reading Helper Project Status 📖✨
 
-## ✅ What's Working
+## ✅ Completed & Working
 
-### Core Application
-- **Interactive Reader**: Tap-to-speak and syllable breakdown popups are fully functional.
-- **Karaoke Mode (Speech-to-Text)**: Sequential word matching, fuzzy skipping logic, backtracking for corrections, and mobile auto-restart implemented.
-- **Story Teller (Text-to-Speech)**: Fluid reading of full stories with word-level highlighting and synchronization.
-- **Interaction Control**: Pause/Resume functionality by clicking the story area during computer read-back.
-- **Dynamic Speed Control**: Real-time reading speed slider (0.8x floor) integrated directly into the header.
-- **Creator Mode**: Users can write stories, add phonetic guides, and manually upload or AI-generate illustrations.
-- **Asset Persistence**: Large AI-generated images are stored in **IndexedDB** to bypass `localStorage` size limits.
-- **PWA & Offline**: Service worker is configured to cache the app shell and local story assets.
-- **P2P Sharing**: PeerJS integration allows for direct device-to-device story transfers.
-- **Word Match Game**: Core game loop, scoring, auditory-only mode, and **Minimal Pairs (distractor map)** support are complete.
-- **Game Word Sets**: Management UI in Dashboard and selection modal are fully functional.
-- **Visual Celebrations**: Canvas-based firework system with procedural audio and haptics.
-- **Speech Clarity**: Specialized enunciation for short words and improved voice selection filtering.
-- **Responsive Game Layout**: Dynamic grid switching (3x4/4x3) and `100dvh` viewport handling.
-- **Adaptive Font Scaling**: Card text scaling using CSS Container Queries (`cqmin`).
-- **Unified Touch Interaction**: Migration to Pointer Events for consistent behavior across iPad, iPhone, and Desktop.
-- **Auto-Scrolling**: Smooth page-level scrolling that centers the active word during Story Teller and Karaoke sessions.
+### Core Reading & Speech
+- **Paragraph-Aware Interactive Reader (`js/ReaderEngine.js`)**: Multi-paragraph layout, dialogue quote separation, keyboard navigation (`Enter`/`Space` to speak, `Shift+Enter` for syllables), and long-press syllable breakdown popups.
+- **Story Teller (Sentence-Chunked TTS)**: Splits stories into natural sentence chunks (`computeNextSentenceRange`) to prevent browser TTS timeouts, with `requestAnimationFrame`-coalesced word highlighting, speed slider (`0.8x–2.0x`), and tap-to-pause.
+- **Karaoke Mode (`js/KaraokeMatcher.js` & `js/SpeechRecognitionManager.js`)**: Sequential fuzzy matching (homophones, digits, custom pronunciations, phonetic codes, edit distance), backtracking, look-ahead skipping, silent mobile auto-restart, and automatic collision prevention with Story Teller.
 
-### AI Integration
-- **Refactored Architecture**: AI logic is isolated in `js/ai-manager.js`.
-- **Prompt Generation**: Gemini (`gemini-flash-latest`) successfully analyzes story text and inserts `[IMAGE: prompt]` tags.
-- **Guided Setup**: `instructions.html` provides a clear workflow for users to obtain their own API keys.
-- **Image Generation**: Successfully integrated **Pollinations.ai** as the primary image engine, providing a reliable fallback for modality restrictions found in direct Vertex AI calls.
+### Games, Learning & Child-Safe UX
+- **Word Match Game (`js/GameManager.js` & `js/GameUI.js`)**: Orientation-aware 3x4 / 4x3 grids, Minimal Pairs distractor grouping, starter "Tricky Pairs" set, procedural Web Audio chimes & haptics (`js/sound-effects.js`), and celebration fireworks featuring the exact words the child mastered.
+- **1-Tap "Practice Tricky Words"**: Launch a personalized game round directly from tracked Tricky Words in the Dashboard or Game Set Selector.
+- **Reading Level Badges**: Displays `Level 1 🌱`, `Level 2 🌿`, and `Level 3 🌳` badges across built-in and remote libraries.
+- **Grown-Up Gate & Native `<dialog>` Modals (`js/utils/dom-utils.js`)**: Replaces blocking browser `alert`/`confirm`/`prompt` popups with accessible `<dialog>` modals and protects Dashboard, Creator Mode, Delete Story, API Key edits, and Reset App with a Grown-Up Check.
 
-### UI, Sync & Connectivity
-- **Live Preview**: `storyDisplay` now updates in real-time as `storyInput` is edited.
-- **Interactive AI Controls**: Added "Generate Now" and "Retry" buttons to manage image queues within Creator Mode.
-- **Metadata Persistence**: `aiImageMetadata` is correctly bundled and rehydrated during the save/load cycle.
-- **Quick Chat**: Integrated a peer-to-peer chat system (`ChatManager.js`) for enhanced communication during story sharing.
-- **Manual Updates**: "Check for Updates" button in sidenav triggers service worker refresh.
+### Security, PWA & Performance
+- **XSS Sanitization & P2P Story Preview**: Escapes all P2P peer names, titles, and story attributes; incoming shared stories preview via `#preview-banner` (Accept / Decline) before saving.
+- **91.6% Smaller Built-in Story Assets**: Converted built-in story illustrations from `15.2 MB` lossless PNGs to `1.27 MB` WebP (`stories/*/images/*.webp`).
+- **Offline PWA Polish (`sw.js` & `manifest.json`)**: Unified Service Worker registration, offline query-parameter shortcut matching (`ignoreSearch: true`), runtime font caching, complete PNG/SVG manifest icons, and full IndexedDB cleanup on Reset App.
+- **Automated Unit Tests (`tests/run-tests.mjs`)**: Zero-dependency unit tests covering sanitization, tokenization, sentence chunking, syllables, Karaoke matching, and minimal-pair game logic.
 
-### Infrastructure & Cleanup
-- **Variable Scoping**: Verified consistency between `main.js` and `ai-manager.js`. Removed unused `generatedImageCache`.
-- **Error Handling**: Replace technical 404/503 errors with child-friendly "AI is drawing..." or "AI is resting" messages in Reader Mode.
-- **Storage Maintenance**: Automated cleanup utility (`cleanupOrphanedImages`) removes unused binary assets from IndexedDB.
-
-## ❌ What Needs Work
-### AI Refinement
-- **Style Continuity**: Investigate using consistent seeds in Pollinations.ai to maintain visual character consistency across a single story.
-
----
+## 🔜 Future Exploration
+### AI Layer (`js/ai-manager.js` — intentionally left untouched for review)
+- Explore migrating Gemini calls from full-story text rewriting to structured JSON outputs (`responseMimeType: "application/json"`) and passing the API key via `x-goog-api-key` headers.

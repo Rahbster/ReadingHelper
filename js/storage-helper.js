@@ -90,5 +90,24 @@ export const ImageStorage = {
             request.onsuccess = () => resolve(request.result || []);
             request.onerror = () => reject(request.error);
         });
+    },
+
+    /**
+     * Clears all stored assets from IndexedDB (used during full app reset).
+     */
+    async clearAll() {
+        if (typeof indexedDB === 'undefined') return;
+        try {
+            await this.init();
+            await new Promise((resolve, reject) => {
+                const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(STORE_NAME);
+                const request = store.clear();
+                request.onsuccess = () => resolve(true);
+                request.onerror = () => reject(request.error);
+            });
+        } catch (e) {
+            console.warn('Could not clear ImageStorage store:', e);
+        }
     }
 };

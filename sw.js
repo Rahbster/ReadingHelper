@@ -1,5 +1,6 @@
-const CACHE_NAME = 'reading-helper-cache-v15';
-// App Shell - the core files for the app's functionality
+const CACHE_NAME = 'reading-helper-cache-v17';
+
+// App Shell - core files required for offline startup
 const appShellFiles = [
     './',
     './index.html',
@@ -7,6 +8,10 @@ const appShellFiles = [
     './stories.json',
     './story-manager.js',
     './js/main.js',
+    './js/ReaderEngine.js',
+    './js/KaraokeMatcher.js',
+    './js/sound-effects.js',
+    './js/utils/dom-utils.js',
     './js/ai-manager.js',
     './js/ToastManager.js',
     './js/ChatManager.js',
@@ -35,23 +40,28 @@ self.addEventListener('install', (event) => {
     event.waitUntil(
         (async () => {
             self.skipWaiting();
-            // First, fetch the list of stories
-            const storyListResponse = await fetch('./stories.json');
-            const stories = await storyListResponse.json();
 
-            // Dynamically generate the list of core story files to cache
-            const storyFiles = stories.flatMap(story => [
+            let stories = [];
+            try {
+                const storyListResponse = await fetch('./stories.json');
+                if (storyListResponse.ok) {
+                    stories = await storyListResponse.json();
+                }
+            } catch (e) {
+                console.warn('Could not fetch stories.json during SW install:', e);
+            }
+
+            const storyFiles = stories.flatMap((story) => [
                 `./${story.path}story.txt`,
                 `./${story.path}phonetics.json`,
                 `./${story.path}pronunciations.json`
             ]);
 
-            // Fetch each story.txt to find and cache its images
             const imageFiles = [];
             const imageRegex = /\[IMAGE:\s*(.*?)\s*\]/g;
 
             for (const story of stories) {
-                let storyText = "";
+                let storyText = '';
                 try {
                     const storyTextResponse = await fetch(`./${story.path}story.txt`);
                     if (storyTextResponse.ok) {
@@ -60,57 +70,79 @@ self.addEventListener('install', (event) => {
                 } catch (e) {
                     console.warn(`Could not fetch story text for ${story.path} during cache-fill.`);
                 }
-                
+
                 let match;
                 while ((match = imageRegex.exec(storyText)) !== null) {
                     const imagePath = match[1].trim();
-                    // Construct the full path relative to the service worker
                     const fullImagePath = `./${story.path}${imagePath}`.replace(/ /g, '%20');
                     imageFiles.push(fullImagePath);
                 }
             }
 
-            // Combine all files to be cached. Use a Set to handle any potential duplicates.
             const urlsToCache = [...new Set([
-                ...appShellFiles, 
-                ...storyFiles, 
+                ...appShellFiles,
+                ...storyFiles,
                 ...imageFiles
             ])];
 
             const cache = await caches.open(CACHE_NAME);
-            console.log('Opened cache. Caching files:', urlsToCache);
-            
-            // Use a more robust caching method that doesn't fail if one file is missing.
-            // This is better than cache.addAll() which fails the entire operation.
-            const cachePromises = urlsToCache.map(async (url) => {
-                try {
-                    const response = await fetch(url);
-                    if (response.ok) {
-                        await cache.put(url, response);
+            await Promise.all(
+                urlsToCache.map(async (url) => {
+                    try {
+                        const response = await fetch(url);
+                        if (response.ok) {
+                            await cache.put(url, response);
+                        }
+                    } catch (error) {
+                        console.warn(`Failed to cache ${url}:`, error);
                     }
-                } catch (error) {
-                    console.warn(`Failed to cache ${url}:`, error);
-                }
-            });
-            await Promise.all(cachePromises);
+                })
+            );
         })()
     );
 });
 
 self.addEventListener('fetch', (event) => {
-    // Only intercept GET requests from our own origin to avoid issues with external APIs
+    if (event.request.method !== 'GET') return;
+
     const url = new URL(event.request.url);
-    if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
+    const isSameOrigin = url.origin === self.location.origin;
+    const isGoogleFont = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
+
+    if (!isSameOrigin && !isGoogleFont) {
         return;
     }
 
     event.respondWith(
-        caches.match(event.request).then((response) => {
-            if (response) {
-                return response;
+        (async () => {
+            const cache = await caches.open(CACHE_NAME);
+
+            // 1. Try exact cache match first
+            const exactMatch = await cache.match(event.request);
+            if (exactMatch) return exactMatch;
+
+            // 2. For same-origin requests with query params (e.g. PWA shortcuts ?mode=game),
+            // match ignoring search query so offline shortcuts work reliably
+            if (isSameOrigin && url.search) {
+                const strippedMatch = await cache.match(event.request, { ignoreSearch: true });
+                if (strippedMatch) return strippedMatch;
             }
-            return fetch(event.request);
-        })
+
+            // 3. Fetch from network and cache fonts/same-origin assets for offline reuse
+            try {
+                const networkResponse = await fetch(event.request);
+                if (networkResponse && (networkResponse.ok || networkResponse.type === 'opaque') && isGoogleFont) {
+                    cache.put(event.request, networkResponse.clone());
+                }
+                return networkResponse;
+            } catch (err) {
+                if (event.request.mode === 'navigate') {
+                    const fallback = await cache.match('./index.html');
+                    if (fallback) return fallback;
+                }
+                throw err;
+            }
+        })()
     );
 });
 
@@ -122,7 +154,7 @@ self.addEventListener('activate', (event) => {
             const cacheNames = await caches.keys();
             await Promise.all(
                 cacheNames.map((cacheName) => {
-                    if (cacheWhitelist.indexOf(cacheName) === -1) {
+                    if (!cacheWhitelist.includes(cacheName)) {
                         return caches.delete(cacheName);
                     }
                 })

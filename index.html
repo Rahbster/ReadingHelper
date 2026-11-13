@@ -7,61 +7,24 @@
     <title>Reading Helper</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="icons/reading-icon.svg">
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180x180.png">
     <link rel="icon" href="icons/reading-icon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="css/sidenav.css">
     <link rel="stylesheet" href="css/chat.css">
-    <script src="js/main.js" type="module" defer></script>
-    <script src="js/peerjs.min.js"></script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').then(registration => {
-                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                }, err => {
-                    console.log('ServiceWorker registration failed: ', err);
-                });
-            });
-        }
-    </script>
+    <script src="js/peerjs.min.js" defer></script>
+    <script src="js/main.js" type="module"></script>
     <meta name="theme-color" content="#A9C9FF"/>
-    <style>
-        header {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            padding: 8px 12px;
-        }
-        .header-title-container {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .header-buttons {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            align-items: center;
-            justify-content: flex-end;
-        }
-        @media (max-width: 600px) {
-            .btn-label { display: none; }
-            header h1 { font-size: 1.1rem; }
-        }
-    </style>
 </head>
 <body>
 
     <header>
         <div class="header-title-container">
-            <button id="hamburger-btn" aria-label="Open Menu">☰</button>
+            <button type="button" id="hamburger-btn" aria-label="Open Menu">☰</button>
             <h1>Reading Helper</h1>
         </div>
         <div class="header-buttons">
-            <button id="choose-story-btn" class="theme-button">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="Select from collection">
+            <button type="button" id="choose-story-btn" class="theme-button">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" role="img" aria-hidden="true">
                     <rect x="4" y="6" width="4" height="14" rx="1" opacity="0.6"/>
                     <rect x="16" y="6" width="4" height="14" rx="1" opacity="0.6"/>
                     <path d="M10 3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v17a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V3z"/>
@@ -74,34 +37,34 @@
     </header>
 
     <!-- Side Navigation Panel -->
-    <div id="sidenav" class="sidenav">
-        <span type="button" class="close-modal" id="close-sidenav-btn" aria-label="Close Menu">&times;</span>
+    <nav id="sidenav" class="sidenav" aria-label="Main Menu" aria-hidden="true">
+        <button type="button" class="close-modal" id="close-sidenav-btn" aria-label="Close Menu">&times;</button>
         <h2>Menu</h2>
-        
+
         <div class="sidenav-item">
-            <button id="toggle-dashboard-btn" class="theme-button full-width">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;"><path d="M13 3h-2v10h2V3zm4 4h-2v6h2V7zm-8 3H7v3h2v-3zM3 21h18v-2H3v2zM3 3v2h18V3H3z"/></svg>
+            <button type="button" id="toggle-dashboard-btn" class="theme-button full-width">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;"><path d="M13 3h-2v10h2V3zm4 4h-2v6h2V7zm-8 3H7v3h2v-3zM3 21h18v-2H3v2zM3 3v2h18V3H3z"/></svg>
                 <span>Dashboard</span>
             </button>
         </div>
 
         <div class="sidenav-item">
-            <button id="connect-btn" class="theme-button full-width">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3s3-1.34 3-3-1.34-3-3-3z"/></svg>
-                <span>Connect</span> <span id="peer-count-badge" class="badge hidden">0</span>
+            <button type="button" id="connect-btn" class="theme-button full-width">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3s3-1.34 3-3-1.34-3-3-3z"/></svg>
+                <span class="connect-label">Connect</span> <span id="peer-count-badge" class="badge hidden">0</span>
             </button>
         </div>
 
         <div class="sidenav-item">
-            <button id="btn-open-chat" class="theme-button full-width" disabled>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+            <button type="button" id="btn-open-chat" class="theme-button full-width" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
                 <span>Quick Chat</span> <span id="chat-badge" class="badge hidden">0</span>
             </button>
         </div>
 
         <div class="sidenav-item">
-            <button id="btn-game-mode" class="theme-button full-width">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;"><path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+            <button type="button" id="btn-game-mode" class="theme-button full-width">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;"><path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
                 <span>Play Game</span>
             </button>
         </div>
@@ -110,192 +73,202 @@
 
         <div class="sidenav-item">
             <label for="settings-name">Display Name:</label>
-            <input type="text" id="settings-name" placeholder="Enter your name" style="width: 100%; padding: 8px; font-size: 1rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+            <input type="text" id="settings-name" class="sidenav-input" placeholder="Enter your name">
         </div>
 
         <div class="sidenav-item">
             <label for="settings-google-api-key">Google AI API Key:</label>
             <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px;">
-                <input type="password" id="settings-google-api-key" placeholder="Paste key here" style="flex: 1; padding: 8px; font-size: 1rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
-                <span id="api-key-status"></span>
+                <input type="password" id="settings-google-api-key" class="sidenav-input" placeholder="Paste key here">
+                <span id="api-key-status" aria-live="polite"></span>
             </div>
-            <button id="test-api-key-btn" class="theme-button full-width" title="Test Connection">Verify API Key</button>
-            <button id="get-api-key-help-btn" class="theme-button full-width" style="margin-top: 8px; font-size: 0.8rem;">
+            <button type="button" id="test-api-key-btn" class="theme-button full-width" title="Test Connection">Verify API Key</button>
+            <button type="button" id="get-api-key-help-btn" class="theme-button secondary full-width" style="margin-top: 4px; font-size: 0.8rem;">
                 Need help getting a key?
             </button>
         </div>
 
-
-
         <div class="sidenav-item">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="sidenav-toggle-row">
                 <span>Theme</span>
-                <button id="theme-toggle" aria-label="Toggle Theme" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">🌓</button>
+                <button type="button" id="theme-toggle" class="icon-toggle-btn" aria-label="Toggle Theme">🌓</button>
+            </div>
+            <div class="sidenav-toggle-row">
+                <span>Sound Effects</span>
+                <button type="button" id="sound-toggle" class="icon-toggle-btn" aria-label="Toggle Sound Effects">🔊</button>
             </div>
         </div>
-    </div>
+    </nav>
     <div id="overlay" class="overlay"></div>
 
     <main>
         <div id="reader-view">
             <div id="creator-area" class="input-area hidden">
-                <textarea id="story-input" placeholder="Paste a story here..."></textarea>
+                <textarea id="story-input" placeholder="Paste or write a story here..."></textarea>
                 <div class="json-editors">
                     <div class="json-editor">
-                        <label>Phonetics Guide</label>
+                        <label>Phonetics Guide (Syllables)</label>
                         <div id="phonetics-editor"></div>
-                        <button id="add-phonetic-btn" class="theme-button">Add Phonetic</button>
+                        <button type="button" id="add-phonetic-btn" class="theme-button">Add Phonetic</button>
                     </div>
                     <div class="json-editor">
-                        <label>Pronunciation Guide</label>
+                        <label>Pronunciation Guide (Speech)</label>
                         <div id="pronunciations-editor"></div>
-                        <button id="add-pronunciation-btn" class="theme-button">Add Pronunciation</button>
+                        <button type="button" id="add-pronunciation-btn" class="theme-button">Add Pronunciation</button>
                     </div>
                 </div>
-                <div class="creator-ai-controls" style="margin-bottom: 15px; display: flex; gap: 10px;">
-                    <button id="illustrate-story-btn" class="theme-button secondary">✨ Illustrate Full Story</button>
-                    <button id="magic-image-btn" class="theme-button secondary">🖼️ Magic Image (Selection)</button>
+                <div class="creator-ai-controls">
+                    <button type="button" id="illustrate-story-btn" class="theme-button secondary">✨ Illustrate Full Story</button>
+                    <button type="button" id="magic-image-btn" class="theme-button secondary">🖼️ Magic Image (Selection)</button>
                 </div>
                 <div class="input-buttons">
-                    <button id="add-image-btn" class="theme-button">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
-                        <span>Add Image</span></button>
-                    <button id="save-story-btn" class="theme-button">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
-                        <span>Save Story</span></button>
+                    <button type="button" id="add-image-btn" class="theme-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                        <span>Add Image</span>
+                    </button>
+                    <button type="button" id="save-story-btn" class="theme-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
+                        <span>Save Story</span>
+                    </button>
                 </div>
             </div>
-            <div id="preview-banner" class="preview-banner hidden">
+
+            <div id="preview-banner" class="preview-banner hidden" role="region" aria-label="Shared Story Preview">
                 <div class="preview-banner-content">
-                    <span>You are previewing this story.</span>
+                    <span id="preview-banner-text">You are previewing a shared story.</span>
                     <div class="preview-banner-actions">
-                        <button id="preview-accept-btn" class="theme-button">Accept Story</button>
-                        <button id="preview-decline-btn" class="theme-button destructive">Decline</button>
+                        <button type="button" id="preview-accept-btn" class="theme-button">Accept Story</button>
+                        <button type="button" id="preview-decline-btn" class="theme-button destructive">Decline</button>
                     </div>
                 </div>
             </div>
+
             <div id="story-display" class="story-container">
-                <p>The story will appear here. Tap on any word to hear it read aloud.</p>
+                <p class="story-empty-hint">The story will appear here. Tap on any word to hear it read aloud.</p>
             </div>
         </div>
 
         <div id="game-view" class="hidden">
             <div class="game-stats">
+                <button type="button" id="game-exit-btn" class="theme-button secondary game-back-btn">← Back</button>
                 <div>Time: <span id="game-timer">0s</span></div>
                 <div>Left: <span id="game-remaining-count">0</span></div>
             </div>
             <div id="game-grid" class="game-grid"></div>
-            <button id="game-repeat-btn" class="theme-button" style="margin-top: 20px;">Repeat Word 🔊</button>
+            <button type="button" id="game-repeat-btn" class="theme-button" style="margin-top: 20px;">Repeat Word 🔊</button>
         </div>
 
         <div id="dashboard-view" class="hidden">
-            <h2>Tricky Words</h2>
-            <p>This list shows the words that have been tapped the most, helping you see where to focus.</p>
+            <h2>Parent Dashboard &amp; Tricky Words</h2>
+            <p>Words tapped for help or skipped during Karaoke Mode appear here so you can see where to focus.</p>
             <div class="dashboard-controls">
-                <button id="creator-mode-btn" class="theme-button">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
-                    <span>Enter Creator Mode</span></button>
-                <button id="clear-stats-btn" class="theme-button">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M16 9h-4v4H9l3 3 3-3h-3V9z"/><path d="M19.78 2.22a.9959.9959 0 0 0-1.41 0L3 17.59V21h3.41l15.37-15.37a.9959.9959 0 0 0 0-1.41L19.78 2.22zM6.92 19H5v-1.92l11.08-11.08 1.92 1.92L6.92 19z"/></svg>
-                    <span>Clear Word Stats</span></button>
-                <button id="check-updates-btn" class="theme-button">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 10.12h-6.78l2.74-2.82c-2.73-2.7-7.15-2.8-9.88-.1-2.73 2.71-2.73 7.08 0 9.79 2.73 2.71 7.15 2.71 9.88 0C18.32 15.65 19 14.08 19 12.1h2c0 1.98-.88 4.55-2.64 6.29-3.51 3.48-9.21 3.48-12.72 0-3.5-3.47-3.5-9.11 0-12.58s9.21-3.47 12.72 0L21 3v7.12z"/></svg>
-                    <span>Check for Updates</span></button>
-                <button id="reset-app-btn" class="theme-button destructive">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6zm-1-8h2v4h-2zm0-4h2v2h-2z"/></svg>
-                    <span>Reset App</span></button>
+                <button type="button" id="practice-tricky-btn" class="theme-button">
+                    <span>🎯 Practice Tricky Words</span>
+                </button>
+                <button type="button" id="creator-mode-btn" class="theme-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+                    <span>Enter Creator Mode</span>
+                </button>
+                <button type="button" id="clear-stats-btn" class="theme-button secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 9h-4v4H9l3 3 3-3h-3V9z"/><path d="M19.78 2.22a.9959.9959 0 0 0-1.41 0L3 17.59V21h3.41l15.37-15.37a.9959.9959 0 0 0 0-1.41L19.78 2.22zM6.92 19H5v-1.92l11.08-11.08 1.92 1.92L6.92 19z"/></svg>
+                    <span>Clear Word Stats</span>
+                </button>
+                <button type="button" id="check-updates-btn" class="theme-button secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 10.12h-6.78l2.74-2.82c-2.73-2.7-7.15-2.8-9.88-.1-2.73 2.71-2.73 7.08 0 9.79 2.73 2.71 7.15 2.71 9.88 0C18.32 15.65 19 14.08 19 12.1h2c0 1.98-.88 4.55-2.64 6.29-3.51 3.48-9.21 3.48-12.72 0-3.5-3.47-3.5-9.11 0-12.58s9.21-3.47 12.72 0L21 3v7.12z"/></svg>
+                    <span>Check for Updates</span>
+                </button>
+                <button type="button" id="reset-app-btn" class="theme-button destructive">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-1.34 6-6 6zm-1-8h2v4h-2zm0-4h2v2h-2z"/></svg>
+                    <span>Reset App</span>
+                </button>
             </div>
 
-            <div id="voice-management" style="margin-top: 2rem; border-top: 2px solid var(--primary-color); padding-top: 1rem;">
+            <div id="tricky-words-list" style="margin-top: 1.5rem;"></div>
+
+            <div id="voice-management" class="dashboard-section">
                 <h3>Voice Settings</h3>
                 <p>Choose a voice for the reading helper and games.</p>
-                <select id="settings-voice-selection" class="theme-button full-width" style="background: var(--surface-color); color: var(--text-color); border: 1px solid var(--primary-color); text-align: left;">
+                <select id="settings-voice-selection" class="voice-select" aria-label="Select Reading Voice">
                     <option value="">Detecting voices...</option>
                 </select>
             </div>
 
-            <div id="game-management" style="margin-top: 2rem; border-top: 2px solid var(--primary-color); padding-top: 1rem;">
+            <div id="game-management" class="dashboard-section">
                 <h3>Game Word Sets</h3>
-                <p>Create lists of words for the Flashcard game (e.g., "Week 1", "Animals").</p>
+                <p>Create lists of words for the Flashcard game (e.g., "Week 1", "Tricky Pairs").</p>
                 <div id="game-set-editor-list"></div>
-                <button id="add-game-set-btn" class="theme-button"><span>+ Add New Word Set</span></button>
-            </div>
-
-            <div id="tricky-words-list">
-                <!-- Word stats will be populated here by JavaScript -->
+                <button type="button" id="add-game-set-btn" class="theme-button"><span>+ Add New Word Set</span></button>
             </div>
         </div>
     </main>
 
     <!-- Story Library Modal -->
-    <div id="story-modal" class="modal hidden">
+    <dialog id="story-modal" class="modal hidden" aria-labelledby="story-modal-title">
         <div class="modal-content">
-            <h2>Choose a Story</h2>
-            <button id="story-modal-x-btn" class="modal-close-btn" aria-label="Close">&times;</button>
-            <button id="refresh-story-list-btn" class="theme-button" title="Refresh story list">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+            <h2 id="story-modal-title">Choose a Story</h2>
+            <button type="button" id="story-modal-x-btn" class="modal-close-btn" aria-label="Close">&times;</button>
+            <button type="button" id="refresh-story-list-btn" class="theme-button secondary" title="Refresh story list" style="align-self: center;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
                 <span>Refresh</span>
             </button>
-            <div id="story-list">
-                <!-- Story links will be populated here -->
-            </div>
+            <div id="story-list"></div>
             <div class="load-options">
-                <button id="load-from-url-btn" class="theme-button">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-                    <span>Load from Web...</span></button>
+                <button type="button" id="load-from-url-btn" class="theme-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                    <span>Load from Web...</span>
+                </button>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <!-- Game Set Selection Modal -->
-    <div id="game-set-select-modal" class="modal hidden">
+    <dialog id="game-set-select-modal" class="modal hidden" aria-labelledby="game-set-modal-title">
         <div class="modal-content">
-            <h2>Choose a Word Set</h2>
-            <button id="game-set-select-x-btn" class="modal-close-btn" aria-label="Close">&times;</button>
-            <div id="game-set-select-list" class="story-list" style="max-height: 50vh; overflow-y: auto; margin: 15px 0;">
-            </div>
+            <h2 id="game-set-modal-title">Choose a Word Set</h2>
+            <button type="button" id="game-set-select-x-btn" class="modal-close-btn" aria-label="Close">&times;</button>
+            <div id="game-set-select-list" class="story-list" style="max-height: 50vh; overflow-y: auto; margin: 15px 0;"></div>
             <div class="load-options">
-                <button id="confirm-game-start-btn" class="theme-button large">Start Flashcard Game</button>
+                <button type="button" id="confirm-game-start-btn" class="theme-button large">Start Flashcard Game</button>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <!-- Game Celebration Modal -->
-    <div id="celebration-modal" class="modal hidden">
+    <dialog id="celebration-modal" class="modal hidden" data-no-backdrop-dismiss="true" aria-labelledby="celeb-title">
         <div class="modal-content celebration-content">
-            <canvas id="celebration-canvas"></canvas>
+            <canvas id="celebration-canvas" aria-hidden="true"></canvas>
             <div class="celebration-ui">
-                <h2 class="celebration-title">🌟 Fantastic Reading! 🌟</h2>
+                <h2 id="celeb-title" class="celebration-title">🌟 Fantastic Reading! 🌟</h2>
                 <div class="celebration-stats">
                     <div class="celeb-stat">Score: <span id="celeb-score">0</span></div>
                     <div class="celeb-stat">Time: <span id="celeb-time">0s</span></div>
                     <div class="celeb-stat">Errors: <span id="celeb-errors">0</span></div>
                 </div>
                 <div class="celebration-buttons" style="display: flex; gap: 12px;">
-                    <button id="celeb-play-again-btn" class="theme-button large">Play Again!</button>
-                    <button id="celeb-done-btn" class="theme-button large secondary">Done</button>
+                    <button type="button" id="celeb-play-again-btn" class="theme-button large">Play Again!</button>
+                    <button type="button" id="celeb-done-btn" class="theme-button large secondary">Done</button>
                 </div>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <!-- Chat Modal -->
-    <div id="chat-modal" class="modal hidden">
+    <dialog id="chat-modal" class="modal hidden" aria-labelledby="chat-modal-title">
         <div class="modal-content">
-            <h2>Quick Chat</h2>
-            <button id="close-chat-modal" class="modal-close-btn" aria-label="Close">&times;</button>
+            <h2 id="chat-modal-title">Quick Chat</h2>
+            <button type="button" id="close-chat-modal" class="modal-close-btn" aria-label="Close">&times;</button>
             <div id="peer-chat">
-                <div id="messages"></div>
+                <div id="messages" aria-live="polite"></div>
                 <div class="chat-input-area">
-                    <input type="text" id="msg-input" placeholder="Type a message...">
-                    <button id="btn-send" class="theme-button">Send</button>
+                    <input type="text" id="msg-input" placeholder="Type a message..." aria-label="Chat message">
+                    <button type="button" id="btn-send" class="theme-button">Send</button>
                 </div>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <!-- Syllable breakdown pop-up -->
-    <div id="syllable-popup" class="syllable-popup hidden"></div>
+    <div id="syllable-popup" class="syllable-popup hidden" role="tooltip"></div>
 
     <!-- Hidden input for image uploads (iOS compatible) -->
     <input type="file" id="image-upload-input" accept="image/*" class="hidden">

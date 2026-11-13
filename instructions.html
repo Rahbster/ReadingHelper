@@ -62,50 +62,47 @@
 <body>
     <div class="card">
         <h1>Magic Illustrator Setup</h1>
-        <div id="step-container" class="step-content">
-            <!-- Content injected by JS -->
-        </div>
+        <div id="step-container" class="step-content"></div>
         <div class="nav-buttons">
-            <button id="prev-btn">← Previous</button>
-            <button id="next-btn">Next →</button>
+            <button type="button" id="prev-btn">← Previous</button>
+            <button type="button" id="next-btn">Next →</button>
         </div>
-        <div class="indicator" id="step-indicator">Step 1 of 5</div>
+        <div class="indicator" id="step-indicator">Step 1 of 7</div>
     </div>
 
     <script>
         const steps = [
             {
                 title: "Step 1: Open Google AI Studio",
-                text: "First, you need to open the Google AI Studio dashboard. Click the green button below to open it in a new tab, then come back to this page for the next step.",
+                text: "First, open the Google AI Studio dashboard. Click the green button below to open it in a new tab, then come back to this page for the next step.",
                 buttonLink: "https://aistudio.google.com/app/apikey",
                 buttonText: "Open Google AI Studio"
             },
             {
                 title: "Step 2: Create a Project",
-                text: "Create a new project named <b>'Reading Helper'</b>. If you are using Google Cloud, ensure the <b>'Generative Language API'</b> and <b>'Vertex AI API'</b> are enabled for this project. In AI Studio, this is usually automatic for Generative Language."
+                text: "Create a new project named <b>'Reading Helper'</b>. In Google AI Studio, the Generative Language API is enabled automatically when you create a free API key."
             },
             {
                 title: "Step 3: Generate Your Key",
-                text: "Click <b>'Get API key'</b> in the left sidebar. Then, click the blue button to create a key. Make sure to select your <b>'Reading Helper'</b> project from the list that appears."
+                text: "Click <b>'Get API key'</b> in the left sidebar, then click <b>'Create API key'</b> and select your <b>'Reading Helper'</b> project."
             },
             {
                 title: "Step 4: Keep it Secret",
-                text: "Your API key is like a password. Never share it with anyone, post it on social media, or send it in emails. If someone gets your key, they could use your AI allowance.",
+                text: "Your API key is like a password. Never share it publicly, post it online, or enter it on a public shared computer.",
                 isWarning: true
             },
             {
-                title: "Step 5: Stay Free (Set Spend Limit)",
-                text: "While the Free Tier is usually enough, you can ensure you are never charged by setting a 'Budget' to <b>$0.00</b> in the Google Cloud Billing console. This acts as a safety switch.",
-                buttonLink: "https://console.cloud.google.com/billing",
-                buttonText: "Open Billing Console"
+                title: "Step 5: Stay on the Unbilled Free Tier",
+                text: "To guarantee you are <b>never charged</b>, simply leave your AI Studio project on the <b>Free Tier</b> and do <b>not</b> attach a Google Cloud billing account. (Note: Google Cloud Billing 'Budgets' only send email alerts—they do not automatically block charges once billing is enabled!)",
+                isWarning: true
             },
             {
                 title: "Step 6: Copy and Paste",
-                text: "Go back to the AI Studio tab, click the <b>'Copy'</b> button next to your key, then return to the Reading Helper. Open the Menu (☰) and paste it into the API Key box."
+                text: "Go back to the AI Studio tab, click the <b>'Copy'</b> button next to your key, then return to Reading Helper. Open the Menu (☰) and paste it into the API Key box."
             },
             {
                 title: "All Done!",
-                text: "Come back to the Reading Helper, open the Menu (☰), and paste the key into the 'Google AI API Key' box. You're all set!"
+                text: "Click <b>'Verify API Key'</b> in the Menu (☰) to confirm you see a green checkmark (✅). You're ready to illustrate stories!"
             }
         ];
 
@@ -134,18 +131,13 @@
             container.innerHTML = `
                 ${html}
                 ${step.buttonLink ? `
-                    <a href="${step.buttonLink}" target="_blank" class="action-button">
+                    <a href="${step.buttonLink}" target="_blank" rel="noopener" class="action-button">
                         ${step.buttonText}
                     </a>` : ''}
             `;
             indicator.textContent = `Step ${currentStep + 1} of ${steps.length}`;
             prevBtn.disabled = currentStep === 0;
-            
-            if (currentStep === steps.length - 1) {
-                nextBtn.textContent = "Finish";
-            } else {
-                nextBtn.textContent = "Next →";
-            }
+            nextBtn.textContent = currentStep === steps.length - 1 ? "Finish" : "Next →";
         }
 
         nextBtn.addEventListener('click', () => {
