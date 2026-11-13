@@ -1,6 +1,7 @@
 /**
  * KaraokeMatcher.js
- * Pure phonetic/fuzzy word matching and segment-anchored streaming Speech-to-Text alignment engine.
+ * Fast, zero-matrix-allocation phonetic/fuzzy word matching and sliding-window
+ * segment-anchored streaming Speech-to-Text alignment engine.
  */
 
 import { cleanWordToken } from './utils/dom-utils.js';
@@ -117,13 +118,26 @@ const CONTRACTION_EXPANSIONS = {
     "let's": 'letus'
 };
 
-// Short articles/prepositions/fillers that should not trigger single-word jumps on unconfirmed interim ends
+// Short articles/prepositions/fillers that should not trigger multi-word jumps on unconfirmed interim ends
 const SHORT_FILLERS = new Set([
     'a', 'i', 'an', 'in', 'on', 'at', 'to', 'of', 'it', 'is', 'he', 'we', 'me', 'my',
     'so', 'no', 'go', 'or', 'up', 'by', 'as', 'be', 'do', 'if', 'the', 'and'
 ]);
 
 const VOCAL_HESITATIONS = new Set(['um', 'umm', 'uh', 'uhh', 'hmm', 'hm', 'er', 'erm']);
+
+// Bounded memoization caches to eliminate repeated regex work across streaming interim events
+const MAX_CACHE_SIZE = 4096;
+const NORM_CACHE = new Map();
+const COMPACT_CACHE = new Map();
+const PHONETIC_CACHE = new Map();
+const SHARED_DP_ROW = new Uint16Array(128);
+
+function cacheSet(map, key, val) {
+    if (map.size >= MAX_CACHE_SIZE) map.clear();
+    map.set(key, val);
+    return val;
+}
 
 function collapseStretchedWord(word) {
     if (!word) return '';
@@ -135,16 +149,25 @@ function collapseStretchedWord(word) {
 }
 
 function normalizeTokenForCompare(raw) {
-    const cleaned = cleanWordToken(raw);
-    if (!cleaned) return '';
-    return collapseStretchedWord(NUMBER_WORDS[cleaned] || cleaned);
+    if (!raw) return '';
+    const str = String(raw);
+    const cached = NORM_CACHE.get(str);
+    if (cached !== undefined) return cached;
+    const cleaned = cleanWordToken(str);
+    if (!cleaned) return cacheSet(NORM_CACHE, str, '');
+    const result = collapseStretchedWord(NUMBER_WORDS[cleaned] || cleaned);
+    return cacheSet(NORM_CACHE, str, result);
 }
 
 function compactLetters(word) {
-    const norm = normalizeTokenForCompare(word);
-    if (!norm) return '';
-    if (CONTRACTION_EXPANSIONS[norm]) return CONTRACTION_EXPANSIONS[norm];
-    return norm.replace(/['-]/g, '');
+    if (!word) return '';
+    const str = String(word);
+    const cached = COMPACT_CACHE.get(str);
+    if (cached !== undefined) return cached;
+    const norm = normalizeTokenForCompare(str);
+    if (!norm) return cacheSet(COMPACT_CACHE, str, '');
+    const result = CONTRACTION_EXPANSIONS[norm] || norm.replace(/['-]/g, '');
+    return cacheSet(COMPACT_CACHE, str, result);
 }
 
 /**
@@ -154,10 +177,16 @@ function compactLetters(word) {
  * @returns {string}
  */
 export function getPhoneticCode(word) {
-    const normalized = normalizeTokenForCompare(word);
+    if (!word) return '';
+    const str = String(word);
+    const cached = PHONETIC_CACHE.get(str);
+    if (cached !== undefined) return cached;
+
+    const normalized = normalizeTokenForCompare(str);
     const w = normalized.replace(/[^a-z]/g, '');
-    if (!w) return '';
-    return w
+    if (!w) return cacheSet(PHONETIC_CACHE, str, '');
+
+    const code = w
         .replace(/^kn/, 'n')
         .replace(/^wr/, 'r')
         .replace(/^wh/, 'w')
@@ -168,29 +197,50 @@ export function getPhoneticCode(word) {
         .replace(/ck/g, 'k')
         .replace(/([a-z])\1+/g, '$1')
         .replace(/^(.{3,})e$/, '$1');
+    return cacheSet(PHONETIC_CACHE, str, code);
 }
 
 /**
- * Computes Levenshtein edit distance between two short strings.
+ * Computes Levenshtein edit distance between two strings using a single reused 1D row
+ * (zero 2D matrix heap allocations) and optional maxDist early exit.
  * @param {string} a
  * @param {string} b
+ * @param {number} [maxDist=Infinity]
  * @returns {number}
  */
-export function editDistance(a, b) {
+export function editDistance(a, b, maxDist = Infinity) {
     if (a === b) return 0;
-    const matrix = Array.from({ length: a.length + 1 }, (_, i) => [i]);
-    for (let j = 1; j <= b.length; j++) matrix[0][j] = j;
-    for (let i = 1; i <= a.length; i++) {
-        for (let j = 1; j <= b.length; j++) {
-            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-            matrix[i][j] = Math.min(
-                matrix[i - 1][j] + 1,
-                matrix[i][j - 1] + 1,
-                matrix[i - 1][j - 1] + cost
-            );
+    const lenA = a.length;
+    const lenB = b.length;
+    if (lenA === 0) return lenB;
+    if (lenB === 0) return lenA;
+    if (Math.abs(lenA - lenB) > maxDist) return maxDist + 1;
+
+    const row = lenB + 1 <= SHARED_DP_ROW.length ? SHARED_DP_ROW : new Uint16Array(lenB + 1);
+    for (let j = 0; j <= lenB; j++) row[j] = j;
+
+    for (let i = 1; i <= lenA; i++) {
+        let prevDiag = row[0];
+        row[0] = i;
+        let rowMin = row[0];
+        const chA = a.charCodeAt(i - 1);
+
+        for (let j = 1; j <= lenB; j++) {
+            const temp = row[j];
+            const cost = chA === b.charCodeAt(j - 1) ? 0 : 1;
+            const del = row[j] + 1;
+            const ins = row[j - 1] + 1;
+            const sub = prevDiag + cost;
+            const best = del < ins ? (del < sub ? del : sub) : (ins < sub ? ins : sub);
+            row[j] = best;
+            prevDiag = temp;
+            if (best < rowMin) rowMin = best;
         }
+
+        if (rowMin > maxDist) return maxDist + 1;
     }
-    return matrix[a.length][b.length];
+
+    return row[lenB];
 }
 
 /**
@@ -202,13 +252,13 @@ export function editDistance(a, b) {
  * @returns {boolean}
  */
 export function isWordsMatch(spokenRaw, expectedRaw, customPronunciations = {}) {
-    const rawExpectedClean = cleanWordToken(expectedRaw);
     const normSpoken = normalizeTokenForCompare(spokenRaw);
     const normExpected = normalizeTokenForCompare(expectedRaw);
     if (!normSpoken || !normExpected) return false;
     if (normSpoken === normExpected) return true;
 
     if (customPronunciations) {
+        const rawExpectedClean = cleanWordToken(expectedRaw);
         const customVal = customPronunciations[rawExpectedClean] || customPronunciations[normExpected];
         if (customVal) {
             const cleanCustom = normalizeTokenForCompare(customVal);
@@ -218,7 +268,8 @@ export function isWordsMatch(spokenRaw, expectedRaw, customPronunciations = {}) 
         }
     }
 
-    if (compactLetters(normSpoken) === compactLetters(normExpected) && compactLetters(normExpected).length >= 3) {
+    const cExpected = compactLetters(normExpected);
+    if (cExpected.length >= 3 && compactLetters(normSpoken) === cExpected) {
         return true;
     }
 
@@ -233,15 +284,15 @@ export function isWordsMatch(spokenRaw, expectedRaw, customPronunciations = {}) 
         return true;
     }
 
-    if (normExpected.length >= 5 && normSpoken.length >= 4 && editDistance(normSpoken, normExpected) <= 1) {
+    if (normExpected.length >= 5 && normSpoken.length >= 4 && editDistance(normSpoken, normExpected, 1) <= 1) {
         return true;
     }
 
     if (
         normExpected.length === 4 &&
         normSpoken.length >= 4 &&
-        normSpoken[0] === normExpected[0] &&
-        editDistance(normSpoken, normExpected) <= 1
+        normSpoken.charCodeAt(0) === normExpected.charCodeAt(0) &&
+        editDistance(normSpoken, normExpected, 1) <= 1
     ) {
         return true;
     }
@@ -249,8 +300,8 @@ export function isWordsMatch(spokenRaw, expectedRaw, customPronunciations = {}) 
     if (
         normExpected.length >= 7 &&
         normSpoken.length >= 6 &&
-        normSpoken[0] === normExpected[0] &&
-        editDistance(normSpoken, normExpected) <= 2
+        normSpoken.charCodeAt(0) === normExpected.charCodeAt(0) &&
+        editDistance(normSpoken, normExpected, 2) <= 2
     ) {
         return true;
     }
@@ -286,7 +337,11 @@ function isTwoToOneMatch(spokenA, spokenB, expectedRaw, customPronunciations = {
         }
     }
 
-    if (expectedCompact.length >= 5 && joined[0] === expectedCompact[0] && editDistance(joined, expectedCompact) <= 1) {
+    if (
+        expectedCompact.length >= 5 &&
+        joined.charCodeAt(0) === expectedCompact.charCodeAt(0) &&
+        editDistance(joined, expectedCompact, 1) <= 1
+    ) {
         return true;
     }
 
@@ -319,12 +374,23 @@ function isLikelyPartialPrefix(spokenRaw, expectedRaw) {
 }
 
 /**
+ * Checks if two trailing interim tokens are an in-progress compound/hyphenated prefix
+ * (e.g. "ear split" while saying "ear-splitting").
+ */
+function isLikelyTwoPartPrefix(spokenA, spokenB, expectedRaw) {
+    const partA = compactLetters(spokenA);
+    const partB = compactLetters(spokenB);
+    const expectedCompact = compactLetters(expectedRaw);
+    if (!partA || !partB || partB.length < 2 || !expectedCompact) return false;
+    const joined = partA + partB;
+    return joined.length < expectedCompact.length && expectedCompact.startsWith(joined);
+}
+
+/**
  * Segment-anchored stateful streaming matcher for Karaoke Mode.
  *
- * Instead of fragile string-prefix slicing (`transcript.startsWith(lastProcessed)`), which chops
- * mid-syllable interim words in half ("the drag" -> "the dragon" => "on") and breaks whenever
- * the browser inserts commas or revises earlier words, each recognizer utterance segment is
- * aligned cleanly as whole words from `anchorPointer` and committed on `final` / segment boundaries.
+ * Aligns each recognizer utterance segment cleanly as whole words from `anchorPointer`,
+ * incrementally locking stabilized prefix tokens so long continuous reading stays O(1) per frame.
  */
 export class KaraokeSession {
     constructor() {
@@ -334,6 +400,7 @@ export class KaraokeSession {
     reset() {
         this.readingPointer = 0;
         this.anchorPointer = 0;
+        this.segmentInitialAnchor = 0;
         this.activeSegmentIndex = null;
         this.lastInterimWords = [];
         this.segmentConsumedWords = 0;
@@ -344,6 +411,7 @@ export class KaraokeSession {
 
     onSegmentBoundary() {
         this.anchorPointer = this.readingPointer;
+        this.segmentInitialAnchor = this.readingPointer;
         this.activeSegmentIndex = null;
         this.lastInterimWords = [];
         this.segmentConsumedWords = 0;
@@ -358,6 +426,7 @@ export class KaraokeSession {
         this.wordStates.set(tappedIndex, 'help');
         this.readingPointer = tappedIndex + 1;
         this.anchorPointer = this.readingPointer;
+        this.segmentInitialAnchor = this.readingPointer;
         this.segmentConsumedWords = this.lastInterimWords.length;
     }
 
@@ -395,6 +464,7 @@ export class KaraokeSession {
         // Detect transition to a new Web Speech utterance segment
         if (segmentIndex !== null && this.activeSegmentIndex !== null && segmentIndex !== this.activeSegmentIndex) {
             this.anchorPointer = this.readingPointer;
+            this.segmentInitialAnchor = this.readingPointer;
             this.segmentConsumedWords = 0;
             this.lastInterimWords = [];
         }
@@ -421,9 +491,17 @@ export class KaraokeSession {
             !isWordsMatch(rawTokens[0], this.lastInterimWords[0], customPronunciations)
         ) {
             this.anchorPointer = this.readingPointer;
+            this.segmentInitialAnchor = this.readingPointer;
             this.segmentConsumedWords = 0;
         }
 
+        // Guard against recognizer dramatically rewriting earlier words to fewer tokens than consumed
+        if (rawTokens.length < this.segmentConsumedWords) {
+            this.anchorPointer = this.segmentInitialAnchor;
+            this.segmentConsumedWords = 0;
+        }
+
+        const prevInterimWords = this.lastInterimWords;
         const sliceStart = Math.min(this.segmentConsumedWords, rawTokens.length);
         const tokens = rawTokens.slice(sliceStart);
         if (!isFinal) {
@@ -434,6 +512,7 @@ export class KaraokeSession {
         const startPtr = Math.min(this.anchorPointer, storyWords.length);
         let ptr = startPtr;
         const segMarks = new Map();
+        const checkpoints = [];
 
         const setSegMark = (idx, status) => {
             if (this.wordStates.get(idx) === 'help') return;
@@ -465,6 +544,7 @@ export class KaraokeSession {
                 setSegMark(ptr, 'correct');
                 ptr += 1;
                 w += directConsumed - 1;
+                checkpoints.push({ tokenEndCount: w + 1, storyPtr: ptr });
                 continue;
             }
 
@@ -473,11 +553,15 @@ export class KaraokeSession {
                 setSegMark(ptr, 'correct');
                 setSegMark(ptr + 1, 'correct');
                 ptr += 2;
+                checkpoints.push({ tokenEndCount: w + 1, storyPtr: ptr });
                 continue;
             }
 
             // 3. Hold unfinished partial prefix at the very end of an interim hypothesis
             if (isLastInterimToken && isLikelyPartialPrefix(spoken, storyWords[ptr])) {
+                break;
+            }
+            if (!isFinal && w + 1 === tokens.length - 1 && isLikelyTwoPartPrefix(spoken, tokens[w + 1], storyWords[ptr])) {
                 break;
             }
 
@@ -490,7 +574,7 @@ export class KaraokeSession {
                 continue;
             }
 
-            // 5. Forward look-ahead & catch-up window (up to 10 words ahead)
+            // 5. Responsive forward look-ahead & catch-up window (up to 10 words ahead)
             let jumpedAhead = false;
             const forwardLimit = Math.min(ptr + 10, storyWords.length);
             for (let i = ptr + 1; i < forwardLimit; i++) {
@@ -503,17 +587,19 @@ export class KaraokeSession {
                     nextTokenIdx < tokens.length &&
                     i + 1 < storyWords.length &&
                     matchesAt(nextTokenIdx, i + 1) > 0;
-                const isContentWord = spoken.length >= 3 && !SHORT_FILLERS.has(spoken);
 
                 let allowJump = false;
                 if (dist === 1) {
-                    allowJump = hasNextConfirm || !isLastInterimToken || isContentWord;
-                } else if (dist <= 3) {
+                    // Immediately recover from 1 missed/misheard word on any real 2+ char word ("the", "and", "pig", etc.)
+                    allowJump = hasNextConfirm || !isLastInterimToken || (spoken.length >= 2 && !VOCAL_HESITATIONS.has(spoken));
+                } else if (dist === 2) {
+                    allowJump = hasNextConfirm || (spoken.length >= 3 && !SHORT_FILLERS.has(spoken));
+                } else if (dist === 3) {
+                    allowJump = hasNextConfirm || (spoken.length >= 4 && !SHORT_FILLERS.has(spoken));
+                } else {
                     allowJump =
                         hasNextConfirm ||
-                        (spoken.length >= 4 && !SHORT_FILLERS.has(spoken) && (!isLastInterimToken || spoken.length >= 5));
-                } else {
-                    allowJump = hasNextConfirm || (isFinal && spoken.length >= 7 && !SHORT_FILLERS.has(spoken));
+                        (spoken.length >= 6 && !SHORT_FILLERS.has(spoken) && (!isLastInterimToken || isFinal || spoken.length >= 7));
                 }
 
                 if (allowJump) {
@@ -523,6 +609,7 @@ export class KaraokeSession {
                     setSegMark(i, 'correct');
                     ptr = i + 1;
                     w += consumedHere - 1;
+                    checkpoints.push({ tokenEndCount: w + 1, storyPtr: ptr });
                     jumpedAhead = true;
                     break;
                 }
@@ -569,7 +656,7 @@ export class KaraokeSession {
         }
 
         // Clear any tentative marks from a previous interim hypothesis that retracted
-        const maxPreviousTouch = Math.max(prevPointer, prevPointer + 1);
+        const maxPreviousTouch = prevPointer + 1;
         const clearStart = Math.min(ptr, prevPointer);
         if (clearStart < maxPreviousTouch) {
             for (let idx = startPtr; idx <= maxPreviousTouch; idx++) {
@@ -590,7 +677,6 @@ export class KaraokeSession {
                 marks.push({ index: idx, status });
             }
 
-            // Record tricky words when confirmed (skipped words that we've moved past, or final misspoken)
             if ((status === 'skipped' && (isFinal || ptr > idx + 1)) || (status === 'misspoken' && isFinal)) {
                 if (!this.recordedTrickyIndices.has(idx)) {
                     this.recordedTrickyIndices.add(idx);
@@ -602,7 +688,46 @@ export class KaraokeSession {
             }
         }
 
+        // On finalization, also confirm any skipped/misspoken words from earlier sliding-window commits
+        if (isFinal && this.segmentInitialAnchor < startPtr) {
+            for (let idx = this.segmentInitialAnchor; idx < startPtr; idx++) {
+                const st = this.wordStates.get(idx);
+                if ((st === 'skipped' || st === 'misspoken') && !this.recordedTrickyIndices.has(idx)) {
+                    this.recordedTrickyIndices.add(idx);
+                    const cleanExpected = cleanWordToken(storyWords[idx]);
+                    if (cleanExpected.length > 2) {
+                        trickyWords.push(cleanExpected);
+                    }
+                }
+            }
+        }
+
         this.readingPointer = ptr;
+
+        // Sliding-window prefix commit: keep long continuous interim utterances O(1) (~8-14 tail tokens)
+        if (!isFinal && tokens.length > 14 && checkpoints.length > 0) {
+            const maxCommitTokens = tokens.length - 8;
+            let bestCp = null;
+            for (let c = checkpoints.length - 1; c >= 0; c--) {
+                if (checkpoints[c].tokenEndCount <= maxCommitTokens) {
+                    bestCp = checkpoints[c];
+                    break;
+                }
+            }
+            if (bestCp && prevInterimWords.length >= sliceStart + bestCp.tokenEndCount) {
+                let prefixStable = true;
+                for (let k = 0; k < bestCp.tokenEndCount; k++) {
+                    if (rawTokens[sliceStart + k] !== prevInterimWords[sliceStart + k]) {
+                        prefixStable = false;
+                        break;
+                    }
+                }
+                if (prefixStable) {
+                    this.segmentConsumedWords = sliceStart + bestCp.tokenEndCount;
+                    this.anchorPointer = bestCp.storyPtr;
+                }
+            }
+        }
 
         if (isFinal) {
             this.onSegmentBoundary();

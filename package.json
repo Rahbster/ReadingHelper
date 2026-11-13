@@ -5,6 +5,7 @@
   "type": "module",
   "description": "An interactive reading assistant PWA for young readers.",
   "scripts": {
+    "start": "node scripts/dev-server.mjs",
     "test": "node tests/run-tests.mjs"
   }
 }

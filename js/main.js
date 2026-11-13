@@ -27,6 +27,7 @@ import {
     prefersReducedMotion,
     requireParentGate
 } from './utils/dom-utils.js';
+import { recordPerf } from './utils/perf-monitor.js';
 
 const dom = {
     storyInput: document.getElementById('story-input'),
@@ -153,6 +154,15 @@ let readAlongSessionId = 0;
 let speedUpdateTimeout = null;
 const boundaryCapableVoices = new Set();
 const boundarySilentVoices = new Set();
+let lastSentenceUsedLocalVoice = true;
+
+// Coalesced scroll & cached word-stats state
+let pendingScrollEl = null;
+let scrollRafId = null;
+let lastSmoothScrollAt = 0;
+let wordStatsCache = null;
+let wordStatsSaveTimer = null;
+let dashboardDirty = false;
 
 let renderTimeout;
 const handleStoryInputPreview = () => {
@@ -189,6 +199,11 @@ export const uiManager = new UIManager(dom, chatManager, toastManager, {
         stopReadAlongIfActive();
         if (sttManager && sttManager.isActive) {
             sttManager.stop();
+        }
+    },
+    onEnterDashboardView: () => {
+        if (dashboardDirty) {
+            renderDashboard();
         }
     }
 });
@@ -258,6 +273,22 @@ async function checkForUpdates() {
 async function setupServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
 
+    // On localhost / 127.0.0.1, bypass Service Worker caching so live local edits always take effect immediately
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (isLocalhost) {
+        try {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map((reg) => reg.unregister()));
+            if ('caches' in window) {
+                const keys = await caches.keys();
+                await Promise.all(keys.map((key) => caches.delete(key)));
+            }
+        } catch (e) {
+            // Ignore cleanup errors on localhost
+        }
+        return;
+    }
+
     try {
         const swUrl = new URL('sw.js', window.location.href).href;
         const registration = await navigator.serviceWorker.register(swUrl);
@@ -284,11 +315,8 @@ async function setupServiceWorker() {
 }
 
 async function init() {
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.getVoices();
-    }
-
     uiManager.initTheme();
+    loadPreferences();
     loadWordStats();
     setupServiceWorker();
 
@@ -305,7 +333,6 @@ async function init() {
     );
     injectReadAloudUI();
     injectReadAlongUI();
-    loadPreferences();
 
     aiManager.init({
         toastManager,
@@ -313,12 +340,28 @@ async function init() {
         openNav: () => uiManager.openNav()
     });
 
-    await loadStoryLibrary();
     setupEventListeners();
+    await loadStoryLibrary();
     renderDashboard();
     GameUI.renderGameSetEditor();
-    VoiceManager.populateVoiceList(dom.settingsVoiceSelection);
     performStorageMaintenance();
+
+    // Defer cold OS speech-engine enumeration off the critical first-paint / interactive path
+    const warmVoices = () => {
+        if ('speechSynthesis' in window) {
+            VoiceManager.populateVoiceList(dom.settingsVoiceSelection);
+            if (speechSynthesis.onvoiceschanged !== undefined) {
+                speechSynthesis.onvoiceschanged = () => {
+                    VoiceManager.populateVoiceList(dom.settingsVoiceSelection);
+                };
+            }
+        }
+    };
+    if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(warmVoices, { timeout: 600 });
+    } else {
+        setTimeout(warmVoices, 120);
+    }
 
     const urlParams = new URLSearchParams(window.location.search);
     const mode = urlParams.get('mode');
@@ -363,40 +406,30 @@ function setHeaderButtonLabel(btn, icon, label) {
 }
 
 function injectReadAloudUI() {
-    if (!sttManager.isSupported()) return;
-
-    const headerButtons = document.querySelector('.header-buttons');
-    btnReadAloud = document.createElement('button');
-    btnReadAloud.type = 'button';
-    btnReadAloud.id = 'btn-read-aloud';
-    btnReadAloud.className = 'theme-button header-reader-only';
-    setHeaderButtonLabel(btnReadAloud, '🎤', 'Karaoke Mode');
+    btnReadAloud = document.getElementById('btn-read-aloud');
+    if (!btnReadAloud) return;
+    if (!sttManager.isSupported()) {
+        btnReadAloud.classList.add('hidden');
+        btnReadAloud.classList.remove('header-reader-only');
+        return;
+    }
     btnReadAloud.addEventListener('click', toggleReadAloud);
-    headerButtons.prepend(btnReadAloud);
 }
 
 function injectReadAlongUI() {
-    const headerButtons = document.querySelector('.header-buttons');
+    const slider = document.getElementById('reading-speed-slider');
+    if (slider) {
+        slider.value = readingRate;
+        slider.addEventListener('input', (e) => updateReadingRate(e.target.value));
+    }
+    document.querySelectorAll('.speed-display-val').forEach((el) => {
+        el.textContent = readingRate.toFixed(1);
+    });
 
-    const container = document.createElement('div');
-    container.className = 'header-speed-control header-reader-only';
-    container.innerHTML = `
-        <label for="reading-speed-slider"><span class="btn-label">Speed: </span><span class="speed-display-val">${readingRate.toFixed(1)}</span>x</label>
-        <input id="reading-speed-slider" type="range" class="speed-slider-input" min="0.8" max="2.0" step="0.1" value="${readingRate}" aria-label="Reading Speed">
-    `;
-
-    const slider = container.querySelector('.speed-slider-input');
-    slider.addEventListener('input', (e) => updateReadingRate(e.target.value));
-
-    btnReadAlong = document.createElement('button');
-    btnReadAlong.type = 'button';
-    btnReadAlong.id = 'btn-read-along';
-    btnReadAlong.className = 'theme-button header-reader-only';
-    setHeaderButtonLabel(btnReadAlong, '🔊', 'Story Teller');
-    btnReadAlong.addEventListener('click', toggleReadAlong);
-
-    headerButtons.prepend(btnReadAlong);
-    headerButtons.prepend(container);
+    btnReadAlong = document.getElementById('btn-read-along');
+    if (btnReadAlong) {
+        btnReadAlong.addEventListener('click', toggleReadAlong);
+    }
 }
 
 function stopReadAlongIfActive() {
@@ -455,7 +488,13 @@ async function startReadAlong() {
         currentReadAlongIndex = range.end + 1;
 
         if (isReadingAlong && !isReadAlongPaused && mySession === readAlongSessionId && currentReadAlongIndex < storyWordElements.length) {
-            await new Promise((r) => setTimeout(r, pauseAfterMs));
+            // Remote network voices already incur ~300ms+ synthesis RTT on the next sentence; avoid stacking long JS waits
+            const effectivePauseMs = lastSentenceUsedLocalVoice
+                ? Math.round(pauseAfterMs * 0.7)
+                : Math.min(60, Math.round(pauseAfterMs * 0.2));
+            if (effectivePauseMs > 0) {
+                await new Promise((r) => setTimeout(r, effectivePauseMs));
+            }
         }
     }
 
@@ -558,6 +597,7 @@ async function runSentenceRead(range, sessionId, isFirstChunk = false) {
                 onStart: ({ voice } = {}) => {
                     if (sessionId !== readAlongSessionId || !isReadingAlong) return;
                     activeVoiceName = voice?.name || '';
+                    lastSentenceUsedLocalVoice = Boolean(voice ? voice.localService : true);
                     maxWordIndexInSegment = range.start;
                     currentReadAlongIndex = range.start;
                     highlightReadAlongWord(range.start, isFirstChunk && range.start === 0);
@@ -571,7 +611,7 @@ async function runSentenceRead(range, sessionId, isFirstChunk = false) {
                             scheduleFallbackStep(0);
                         } else {
                             // First sentence with an unknown voice: give native boundaries a brief lead
-                            scheduleFallbackStep(180);
+                            scheduleFallbackStep(85);
                         }
                     }
                 }
@@ -609,18 +649,47 @@ function highlightReadAlongWord(index, immediateScroll = false) {
     scrollToWord(el, immediateScroll);
 }
 
-function scrollToWord(el, immediate = false) {
+function performScrollToWord(el, immediate = false) {
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    // Avoid repeatedly trying to scroll upward when already at the top of the document
     const topThreshold = window.scrollY <= 10 ? 8 : 65;
     const bottomThreshold = window.innerHeight - 85;
     const isVisible = rect.top >= topThreshold && rect.bottom <= bottomThreshold;
 
     if (!isVisible) {
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const completelyOffscreen = rect.bottom < 0 || rect.top > window.innerHeight;
+        if (!immediate && !completelyOffscreen && now - lastSmoothScrollAt < 260) {
+            return;
+        }
+        const useAuto = immediate || prefersReducedMotion();
+        if (!useAuto) lastSmoothScrollAt = now;
         el.scrollIntoView({
-            behavior: immediate || prefersReducedMotion() ? 'auto' : 'smooth',
+            behavior: useAuto ? 'auto' : 'smooth',
             block: window.scrollY <= 10 && rect.top >= 0 ? 'nearest' : 'center'
+        });
+    }
+}
+
+function scrollToWord(el, immediate = false) {
+    if (!el) return;
+    if (immediate) {
+        if (scrollRafId !== null) {
+            cancelAnimationFrame(scrollRafId);
+            scrollRafId = null;
+        }
+        pendingScrollEl = null;
+        performScrollToWord(el, true);
+        return;
+    }
+
+    pendingScrollEl = el;
+    if (scrollRafId === null) {
+        scrollRafId = requestAnimationFrame(() => {
+            scrollRafId = null;
+            const target = pendingScrollEl;
+            pendingScrollEl = null;
+            if (target) performScrollToWord(target, false);
         });
     }
 }
@@ -672,6 +741,12 @@ function toggleReadAloud() {
         }
         // Stop Story Teller if currently speaking
         stopReadAlongIfActive();
+        // Immediate 0ms visual feedback while browser opens microphone hardware
+        if (btnReadAloud) {
+            btnReadAloud.classList.add('speaking');
+            setHeaderButtonLabel(btnReadAloud, '🛑', 'Stop Karaoke');
+        }
+        sttManager.isActive = true;
         resetReadingPointer();
         sttManager.start();
         toastManager.show('Listening... Read the story out loud!', 'info');
@@ -692,11 +767,14 @@ function handleSpeechStatusChange(isActive) {
 }
 
 function resetReadingPointer() {
+    for (const idx of karaokeSession.wordStates.keys()) {
+        storyWordElements[idx]?.classList.remove('read-correct', 'read-skipped', 'read-help', 'read-active', 'read-misspoken');
+    }
+    if (lastActiveKaraokeElement) {
+        lastActiveKaraokeElement.classList.remove('read-active');
+        lastActiveKaraokeElement = null;
+    }
     karaokeSession.reset();
-    lastActiveKaraokeElement = null;
-    storyWordElements.forEach((el) => {
-        el.classList.remove('read-correct', 'read-skipped', 'read-help', 'read-active', 'read-misspoken');
-    });
     updateActiveHighlight();
 }
 
@@ -737,6 +815,9 @@ function handleSpeechResult(payload = {}) {
     }
     if (storyWordElements.length === 0) return;
 
+    const prevPtr = karaokeSession.readingPointer;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+
     const outcome = karaokeSession.processResult({
         final: payload.final || '',
         interim: payload.interim || '',
@@ -744,6 +825,8 @@ function handleSpeechResult(payload = {}) {
         storyWords: storyWordsList,
         customPronunciations: currentPronunciations
     });
+
+    const t1 = typeof performance !== 'undefined' ? performance.now() : 0;
 
     outcome.clearRange.forEach(([from, to]) => {
         for (let j = from; j < to; j++) {
@@ -754,6 +837,18 @@ function handleSpeechResult(payload = {}) {
     outcome.marks.forEach(({ index, status }) => markWord(index, status));
     outcome.trickyWords.forEach((w) => trackWord(w));
     updateActiveHighlight();
+
+    if (t0 > 0 && typeof performance !== 'undefined') {
+        const t2 = performance.now();
+        recordPerf('karaoke-step', {
+            matcherMs: Number((t1 - t0).toFixed(3)),
+            domMs: Number((t2 - t1).toFixed(3)),
+            interEventGapMs: payload.interEventGapMs || 0,
+            isFinal: Boolean(payload.final),
+            pointerDelta: outcome.readingPointer - prevPtr,
+            marksCount: outcome.marks.length
+        });
+    }
 
     if (outcome.completed) {
         sttManager.stop();
@@ -782,25 +877,46 @@ function speakWordFromStory(rawText, targetElement = activeWordElement) {
     VoiceManager.speakText(textToSpeak, targetElement, null, readingRate, { isSingleWord: true });
 }
 
+function flushWordStatsToStorage() {
+    wordStatsSaveTimer = null;
+    if (!wordStatsCache) return;
+    try {
+        localStorage.setItem(WORD_STATS_KEY, JSON.stringify(wordStatsCache));
+    } catch (e) {
+        // Ignore storage quota errors
+    }
+}
+
 function trackWord(rawWord) {
     const cleaned = cleanWordToken(rawWord);
     if (!cleaned) return;
     const stats = loadWordStats();
     stats[cleaned] = (stats[cleaned] || 0) + 1;
-    localStorage.setItem(WORD_STATS_KEY, JSON.stringify(stats));
-    renderDashboard();
-}
 
-function loadWordStats() {
-    try {
-        const statsJSON = localStorage.getItem(WORD_STATS_KEY);
-        return statsJSON ? JSON.parse(statsJSON) : {};
-    } catch (e) {
-        return {};
+    if (wordStatsSaveTimer === null) {
+        wordStatsSaveTimer = setTimeout(flushWordStatsToStorage, 150);
+    }
+
+    if (dom.dashboardView && !dom.dashboardView.classList.contains('hidden')) {
+        renderDashboard();
+    } else {
+        dashboardDirty = true;
     }
 }
 
+function loadWordStats() {
+    if (wordStatsCache !== null) return wordStatsCache;
+    try {
+        const statsJSON = localStorage.getItem(WORD_STATS_KEY);
+        wordStatsCache = statsJSON ? JSON.parse(statsJSON) : {};
+    } catch (e) {
+        wordStatsCache = {};
+    }
+    return wordStatsCache;
+}
+
 function renderDashboard() {
+    dashboardDirty = false;
     if (!dom.trickyWordsList) return;
     const stats = loadWordStats();
     const sortedWords = Object.entries(stats).sort(([, a], [, b]) => b - a);
@@ -833,6 +949,9 @@ async function clearAllStats() {
         destructive: true
     });
     if (confirmed) {
+        clearTimeout(wordStatsSaveTimer);
+        wordStatsSaveTimer = null;
+        wordStatsCache = {};
         localStorage.removeItem(WORD_STATS_KEY);
         renderDashboard();
         toastManager.show('Word statistics cleared.', 'info');
@@ -1232,7 +1351,11 @@ async function handleStoryListClick(event) {
 }
 
 async function loadBuiltInOrRemoteStory(path) {
+    const loadStart = typeof performance !== 'undefined' ? performance.now() : 0;
     stopReadAlongIfActive();
+    if (sttManager && sttManager.isActive) {
+        sttManager.stop();
+    }
     clearSharedStoryPreviewBanner();
     currentStoryPath = path;
     localImageUrls = {};
@@ -1260,37 +1383,22 @@ async function loadBuiltInOrRemoteStory(path) {
         currentPronunciations = pronunciationsData || {};
         dom.storyInput.value = storyText;
 
-        const imageRegex = /\[IMAGE:\s*(.*?)\s*\]/g;
-        const matches = [...storyText.matchAll(imageRegex)];
-        for (const match of matches) {
-            const imageIdentifier = match[1].trim();
-            const isFilePath = !imageIdentifier.startsWith('ai-gen-') && /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(imageIdentifier);
-            if (isFilePath) {
-                const imageName = imageIdentifier.split('/').pop();
-                const fullImagePath = `${path}${imageIdentifier}`.replace(/ /g, '%20');
-                try {
-                    const imgRes = await fetch(fullImagePath);
-                    if (imgRes.ok) {
-                        const blob = await imgRes.blob();
-                        const base64 = await new Promise((resolve) => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result);
-                            reader.readAsDataURL(blob);
-                        });
-                        sessionImages[imageName] = base64;
-                        localImageUrls[imageName] = base64;
-                    }
-                } catch (e) {
-                    console.warn(`[INGEST] Failed to pre-load built-in image: ${fullImagePath}`, e);
-                }
-            }
+        if (isCreatorMode) {
+            renderPhoneticsEditor(currentPhonetics);
+            renderPronunciationEditor(currentPronunciations);
         }
 
-        renderPhoneticsEditor(currentPhonetics);
-        renderPronunciationEditor(currentPronunciations);
-
+        // Render immediately using direct lazy-loaded URLs instead of blocking on Base64 image conversion
         uiManager.closeStoryModal();
         renderStory();
+
+        if (loadStart > 0 && typeof performance !== 'undefined') {
+            recordPerf('story-load', {
+                path,
+                durationMs: Number((performance.now() - loadStart).toFixed(2)),
+                wordCount: storyWordElements.length
+            });
+        }
     } catch (error) {
         console.error(`Failed to load story module from ${path}`, error);
         toastManager.show('Could not load the selected story.', 'error');
@@ -1765,6 +1873,36 @@ async function saveUserStory() {
             }
         }
 
+        // Lazily hydrate any built-in/remote file-path images only when saving a customized copy
+        if (currentStoryPath) {
+            const imageRegex = /\[IMAGE:\s*(.*?)\s*\]/g;
+            const matches = [...storyText.matchAll(imageRegex)];
+            await Promise.all(
+                matches.map(async (match) => {
+                    const imageIdentifier = match[1].trim();
+                    const isFilePath = !imageIdentifier.startsWith('ai-gen-') && /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(imageIdentifier);
+                    if (!isFilePath) return;
+                    const imageName = imageIdentifier.split('/').pop();
+                    if (sessionImages[imageName]) return;
+                    const fullImagePath = `${currentStoryPath}${imageIdentifier}`.replace(/ /g, '%20');
+                    try {
+                        const imgRes = await fetch(fullImagePath);
+                        if (imgRes.ok) {
+                            const blob = await imgRes.blob();
+                            const base64 = await new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result);
+                                reader.readAsDataURL(blob);
+                            });
+                            sessionImages[imageName] = base64;
+                        }
+                    } catch (e) {
+                        console.warn(`[SAVE] Could not bundle image ${fullImagePath}`, e);
+                    }
+                })
+            );
+        }
+
         for (const imageName of Object.keys(sessionImages)) {
             story.images[imageName] = sessionImages[imageName];
         }
@@ -1805,16 +1943,6 @@ async function deleteMyStory(storyId, storyTitle) {
     }
     toastManager.show(`Deleted "${storyTitle}".`, 'info');
     await loadStoryLibrary();
-}
-
-if ('speechSynthesis' in window) {
-    window.speechSynthesis.getVoices();
-    if (speechSynthesis.onvoiceschanged !== undefined) {
-        speechSynthesis.onvoiceschanged = () => {
-            window.speechSynthesis.getVoices();
-            VoiceManager.populateVoiceList(dom.settingsVoiceSelection);
-        };
-    }
 }
 
 init();

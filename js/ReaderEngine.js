@@ -111,7 +111,7 @@ function renderImageBlock(identifier, options) {
         const rawSrc = localImageUrls[imageName] || `${currentStoryPath}${identifier}`.replace(/ /g, '%20');
         const safeSrc = escapeHtml(rawSrc);
         const titleAttr = isCreatorMode ? ` title="${escapeHtml(identifier)}"` : '';
-        return `<img src="${safeSrc}" alt="Story illustration" class="story-image" loading="lazy"${titleAttr}>`;
+        return `<img src="${safeSrc}" alt="Story illustration" class="story-image" loading="lazy" decoding="async"${titleAttr}>`;
     }
 
     if (isAiGenerated) {
@@ -309,7 +309,10 @@ export function buildSpeechSegment(text, wordMetadata, range, customPronunciatio
 
         const vowelGroups = (spokenWord.match(/[aeiouy]+/gi) || []).length || 1;
         const extraChars = Math.max(0, spokenWord.length - 4);
-        const estimatedDurationMs = Math.max(150, 90 + vowelGroups * 115 + extraChars * 14) + pauseMs;
+        const baseMs = spokenWord.length <= 3
+            ? Math.max(110, 50 + vowelGroups * 80)
+            : Math.max(145, 70 + vowelGroups * 102 + extraChars * 12);
+        const estimatedDurationMs = baseMs + pauseMs;
 
         words.push({
             wordIndex: i,

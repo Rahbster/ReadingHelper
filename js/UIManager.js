@@ -8,6 +8,7 @@ export class UIManager {
         this.chatManager = chatManager;
         this.toastManager = toastManager;
         this.onLeaveReaderView = options.onLeaveReaderView || null;
+        this.onEnterDashboardView = options.onEnterDashboardView || null;
         this.setupEventListeners();
     }
 
@@ -163,6 +164,9 @@ export class UIManager {
         } else if (viewName === 'dashboard') {
             this.dom.dashboardView?.classList.remove('hidden');
             if (this.dom.toggleDashboardBtn) this.dom.toggleDashboardBtn.querySelector('span').textContent = 'Back to Reader';
+            if (typeof this.onEnterDashboardView === 'function') {
+                this.onEnterDashboardView();
+            }
         }
     }
 

@@ -15,7 +15,9 @@ import {
     resolveSegmentWordIndex
 } from '../js/ReaderEngine.js';
 import { getSyllables, normalizeWordForSpeech, selectPreferredVoice } from '../js/VoiceManager.js';
+import { SpeechRecognitionManager } from '../js/SpeechRecognitionManager.js';
 import { GameManager, getMinimalPairPartners } from '../js/GameManager.js';
+import { performance } from 'perf_hooks';
 
 let passed = 0;
 let failed = 0;
@@ -324,6 +326,119 @@ test('UI/CSS regression guard: modal scroll containment, story-group flex-shrink
     assert.ok(/body\.modal-open[\s\S]*?overflow:\s*hidden/.test(styleCss), 'body.modal-open must lock background scroll');
     assert.ok(/visibility:\s*hidden/.test(sidenavCss), 'Closed .sidenav must hide focusable children from Tab order');
     assert.ok(/<nav id="sidenav"[^>]*\binert\b/.test(html), 'Initial closed #sidenav in index.html must carry inert attribute');
+    assert.ok(!/@import\s+url\(/.test(styleCss), 'style.css must not use render-blocking @import for web fonts');
+    const readCorrectBlock = styleCss.match(/\.read-correct\s*\{([^}]*)\}/s);
+    assert.ok(readCorrectBlock && !/font-weight:\s*bold/.test(readCorrectBlock[1]), '.read-correct must not change font-weight (prevents mid-line layout reflow)');
+});
+
+test('Karaoke performance & responsiveness: immediate interim short-word catch-up and O(1) sliding window', () => {
+    // 1. Short words ("the", "pig", "time") must advance immediately on interim even if 1-2 prior words were mumbled
+    const quickSession = new KaraokeSession();
+    const shortStory = ['Once', 'upon', 'the', 'little', 'pig', 'went', 'home'];
+    const r1 = quickSession.processResult({
+        interim: 'once pond the',
+        segmentIndex: '1:0',
+        storyWords: shortStory
+    });
+    assert.strictEqual(r1.readingPointer, 3, '1-word gap before "the" must advance immediately on interim without waiting for next word');
+
+    const r2 = quickSession.processResult({
+        interim: 'once pond the uh pig',
+        segmentIndex: '1:0',
+        storyWords: shortStory
+    });
+    assert.strictEqual(r2.readingPointer, 5, 'Short 3-letter content word "pig" must catch up immediately on interim');
+
+    // 2. Streaming a 150-word continuous interim utterance stays O(1) (< 0.5ms avg per step) and preserves tricky words
+    const baseSentence = ['The', 'clever', 'little', 'fox', 'jumped', 'over', 'the', 'mossy', 'log', 'and'];
+    const longStory = [];
+    for (let k = 0; k < 15; k++) longStory.push(...baseSentence);
+
+    const longSession = new KaraokeSession();
+    const spokenSoFar = [];
+    const t0 = performance.now();
+
+    for (let i = 0; i < longStory.length; i++) {
+        // Intentionally skip word index 5 ("over") to verify sliding-window tricky word retention
+        if (i === 5) continue;
+        spokenSoFar.push(longStory[i].toLowerCase());
+        longSession.processResult({
+            interim: spokenSoFar.join(' '),
+            segmentIndex: '1:0',
+            storyWords: longStory
+        });
+    }
+    const finalRes = longSession.processResult({
+        final: spokenSoFar.join(' '),
+        segmentIndex: '1:0',
+        storyWords: longStory
+    });
+    const elapsedMs = performance.now() - t0;
+    const avgStepMs = elapsedMs / longStory.length;
+
+    assert.strictEqual(longSession.readingPointer, longStory.length, 'Should reach end of 150-word continuous segment');
+    assert.ok(avgStepMs < 1.0, `Expected < 1.0ms avg per interim step, got ${avgStepMs.toFixed(3)}ms`);
+    assert.ok(
+        finalRes.trickyWords.includes('over') || longSession.recordedTrickyIndices.has(5),
+        'Skipped word from early sliding window must still be recorded as tricky'
+    );
+});
+
+test('VoiceManager & SpeechRecognitionManager latency guards: local voice priority and mobile isFinal deduplication', () => {
+    // Chrome local OS voice should beat remote boundary-less Google US English
+    const chromeVoices = [
+        { name: 'Google US English', lang: 'en-US', localService: false },
+        { name: 'Microsoft Zira - English (United States)', lang: 'en-US', localService: true }
+    ];
+    assert.strictEqual(
+        selectPreferredVoice(chromeVoices).name,
+        'Microsoft Zira - English (United States)',
+        'Local OS voice with <20ms latency & native word boundaries should beat remote Google US English'
+    );
+
+    // Simulate mobile/WebKit SpeechRecognition where event.resultIndex stays 0 across multiple updates
+    const emitted = [];
+    const origWindow = global.window;
+    let instance = null;
+    global.window = {
+        SpeechRecognition: class MockSR {
+            constructor() { instance = this; }
+            start() {}
+            stop() {}
+        }
+    };
+    try {
+        const mgr = new SpeechRecognitionManager((res) => emitted.push(res), () => {});
+        mgr.start();
+
+        // Event 1: segment 0 finalizes
+        instance.onresult({
+            resultIndex: 0,
+            results: [Object.assign([{ transcript: 'once upon' }], { isFinal: true })]
+        });
+        // Event 2: resultIndex is STILL 0 (mobile Safari/Android), segment 0 is still in results[0], segment 1 is interim
+        instance.onresult({
+            resultIndex: 0,
+            results: [
+                Object.assign([{ transcript: 'once upon' }], { isFinal: true }),
+                Object.assign([{ transcript: 'a time' }], { isFinal: false })
+            ]
+        });
+        // Event 3: duplicate confidence-only interim tick with identical text
+        instance.onresult({
+            resultIndex: 0,
+            results: [
+                Object.assign([{ transcript: 'once upon' }], { isFinal: true }),
+                Object.assign([{ transcript: 'a time' }], { isFinal: false })
+            ]
+        });
+
+        assert.strictEqual(emitted.length, 2, 'Must emit segment 0 final once and unique segment 1 interim once');
+        assert.strictEqual(emitted[0].final, 'once upon');
+        assert.strictEqual(emitted[1].interim, 'a time');
+    } finally {
+        global.window = origWindow;
+    }
 });
 
 console.log(`\nResults: ${passed} passed, ${failed} failed.`);

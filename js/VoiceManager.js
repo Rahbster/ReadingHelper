@@ -1,14 +1,17 @@
 /**
  * VoiceManager.js
- * Handles speech synthesis, natural speech normalization, voice ranking, and syllable breakdown.
+ * Handles low-latency speech synthesis, natural speech normalization, voice ranking, and syllable breakdown.
  */
 
 import { escapeHtml, cleanWordToken } from './utils/dom-utils.js';
+import { recordPerf } from './utils/perf-monitor.js';
 
 export const VOICE_PREF_KEY = 'readingHelperSelectedVoice';
 
 let currentlySpeakingElement = null;
 let currentUtterance = null;
+let cachedVoices = [];
+let voicesListenerBound = false;
 
 const HIGH_QUALITY_MARKERS = ['Natural', 'Neural', 'Premium', 'Enhanced', 'Siri', 'Google'];
 
@@ -72,7 +75,7 @@ const isHighQuality = (v) => HIGH_QUALITY_MARKERS.some((m) => v.name.toLowerCase
 const isNoveltyVoice = (v) => NOVELTY_VOICE_NAMES.some((m) => v.name.toLowerCase().includes(m.toLowerCase()));
 
 /**
- * Scores an English voice for warm, natural storytelling quality.
+ * Scores an English voice for warm storytelling quality AND instant low-latency playback.
  * @param {SpeechSynthesisVoice} v
  * @returns {number}
  */
@@ -89,7 +92,7 @@ function scoreVoice(v) {
 
     if (nameLower.includes('natural') || nameLower.includes('neural')) score += 55;
     else if (nameLower.includes('premium') || nameLower.includes('enhanced') || nameLower.includes('siri')) score += 50;
-    else if (nameLower.includes('google')) score += 40;
+    else if (nameLower.includes('google')) score += v.localService ? 40 : 10;
 
     // Bonus for warm storyteller voices (and avoids stiff default Microsoft David when Zira/Aria exist)
     const nameMatchIndex = PREFERRED_STORYTELLER_NAMES.findIndex((n) => nameLower.includes(n.toLowerCase()));
@@ -97,8 +100,8 @@ function scoreVoice(v) {
         score += Math.max(8, 26 - nameMatchIndex);
     }
 
-    // Slight bonus for local voices within the same quality tier (instant start & native word boundaries)
-    if (v.localService) score += 5;
+    // Meaningful bonus for local OS voices: <20ms instant start & native hardware word boundary events
+    if (v.localService) score += 18;
 
     return score;
 }
@@ -167,17 +170,27 @@ function normalizeSinglePartForSpeech(rawPart, customPronunciations = {}) {
     return word;
 }
 
+function getCachedVoicesSync() {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
+    if (!voicesListenerBound && window.speechSynthesis.addEventListener) {
+        voicesListenerBound = true;
+        window.speechSynthesis.addEventListener('voiceschanged', () => {
+            cachedVoices = window.speechSynthesis.getVoices() || [];
+        });
+    }
+    if (cachedVoices.length > 0) return cachedVoices;
+    cachedVoices = window.speechSynthesis.getVoices() || [];
+    return cachedVoices;
+}
+
 /**
- * Waits briefly if the browser hasn't populated speechSynthesis.getVoices() yet on initial load.
- * @param {number} [timeoutMs=250]
+ * Waits briefly only if the browser hasn't populated speechSynthesis.getVoices() yet on initial load.
+ * @param {number} [timeoutMs=180]
  * @returns {Promise<SpeechSynthesisVoice[]>}
  */
-function getAvailableVoices(timeoutMs = 250) {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-        return Promise.resolve([]);
-    }
-    const immediate = window.speechSynthesis.getVoices();
-    if (immediate && immediate.length > 0) {
+function waitForInitialVoices(timeoutMs = 180) {
+    const immediate = getCachedVoicesSync();
+    if (immediate.length > 0 || typeof window === 'undefined' || !('speechSynthesis' in window)) {
         return Promise.resolve(immediate);
     }
 
@@ -187,7 +200,8 @@ function getAvailableVoices(timeoutMs = 250) {
             if (settled) return;
             settled = true;
             window.speechSynthesis.removeEventListener?.('voiceschanged', onVoices);
-            resolve(window.speechSynthesis.getVoices() || []);
+            cachedVoices = window.speechSynthesis.getVoices() || [];
+            resolve(cachedVoices);
         };
         const onVoices = () => finish();
         window.speechSynthesis.addEventListener?.('voiceschanged', onVoices);
@@ -211,9 +225,16 @@ export function selectPreferredVoice(voices) {
     const englishVoices = voices.filter((v) => v.lang && v.lang.toLowerCase().startsWith('en'));
     if (englishVoices.length === 0) return null;
 
-    return englishVoices
-        .slice()
-        .sort((a, b) => scoreVoice(b) - scoreVoice(a))[0] || null;
+    let bestVoice = englishVoices[0];
+    let bestScore = scoreVoice(bestVoice);
+    for (let i = 1; i < englishVoices.length; i++) {
+        const sc = scoreVoice(englishVoices[i]);
+        if (sc > bestScore) {
+            bestScore = sc;
+            bestVoice = englishVoices[i];
+        }
+    }
+    return bestVoice;
 }
 
 /**
@@ -221,6 +242,7 @@ export function selectPreferredVoice(voices) {
  */
 export function warmUp() {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window && !window.speechSynthesis.speaking) {
+        getCachedVoicesSync();
         const u = new SpeechSynthesisUtterance('');
         u.volume = 0;
         window.speechSynthesis.speak(u);
@@ -228,7 +250,7 @@ export function warmUp() {
 }
 
 /**
- * Uses the Web Speech API to read text aloud.
+ * Uses the Web Speech API to read text aloud with synchronous dispatch whenever voices are cached.
  * @param {string} textToSpeak - The text to be spoken.
  * @param {HTMLElement|null} [elementToHighlight=null] - Optional element to highlight during single-word speech.
  * @param {Function|null} [onBoundary=null] - Optional callback invoked immediately on word boundaries.
@@ -256,12 +278,22 @@ export async function speakText(textToSpeak, elementToHighlight = null, onBounda
         synth.cancel();
     }
 
-    if (currentlySpeakingElement) {
+    if (currentlySpeakingElement && currentlySpeakingElement !== elementToHighlight) {
         currentlySpeakingElement.classList.remove('speaking');
     }
     currentlySpeakingElement = elementToHighlight;
 
-    const voices = await getAvailableVoices();
+    // Apply tap highlight immediately (0ms visual confirmation) instead of waiting for cloud TTS network round-trip
+    if (currentlySpeakingElement) {
+        currentlySpeakingElement.classList.add('speaking');
+    }
+
+    let voices = getCachedVoicesSync();
+    if (voices.length === 0) {
+        voices = await waitForInitialVoices();
+    }
+
+    const requestStartedAt = typeof performance !== 'undefined' ? performance.now() : 0;
 
     return new Promise((resolve) => {
         const utterance = new SpeechSynthesisUtterance(textToSpeak);
@@ -282,7 +314,7 @@ export async function speakText(textToSpeak, elementToHighlight = null, onBounda
             };
         }
 
-        const lengthFactor = isSingleWord && textToSpeak.length <= 4 ? 0.92 : 1.0;
+        const lengthFactor = isSingleWord && textToSpeak.length <= 4 ? 0.94 : 1.0;
         utterance.rate = Math.max(0.65, rate * lengthFactor);
         utterance.pitch = isSingleWord && textToSpeak.length <= 4 ? 1.03 : 1.0;
         utterance.volume = 1.0;
@@ -291,6 +323,14 @@ export async function speakText(textToSpeak, elementToHighlight = null, onBounda
         const triggerStart = () => {
             if (started) return;
             started = true;
+            if (requestStartedAt > 0 && typeof performance !== 'undefined') {
+                recordPerf('tts-start', {
+                    startupMs: Number((performance.now() - requestStartedAt).toFixed(2)),
+                    voice: preferredVoice ? preferredVoice.name : 'system-default',
+                    localService: Boolean(preferredVoice ? preferredVoice.localService : true),
+                    isSingleWord
+                });
+            }
             if (currentlySpeakingElement) {
                 currentlySpeakingElement.classList.add('speaking');
             }
@@ -302,7 +342,7 @@ export async function speakText(textToSpeak, elementToHighlight = null, onBounda
         utterance.onstart = triggerStart;
 
         const cleanup = () => {
-            if (currentlySpeakingElement) {
+            if (currentlySpeakingElement === elementToHighlight && currentlySpeakingElement) {
                 currentlySpeakingElement.classList.remove('speaking');
                 currentlySpeakingElement = null;
             }
@@ -324,11 +364,14 @@ export async function speakText(textToSpeak, elementToHighlight = null, onBounda
             resolve();
         };
 
+        // Desktop & Android Blink/WebKit handle synth.cancel() + synth.speak() synchronously without artificial delay.
+        // Only iOS Safari requires a brief settle gap after canceling an active utterance.
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        const speakDelay = wasBusy ? (isIOS ? 110 : 25) : (isIOS ? 35 : 0);
+        const speakDelay = isIOS && wasBusy ? 80 : 0;
 
         const dispatchSpeech = () => {
             if (currentUtterance !== utterance) {
+                cleanup();
                 resolve();
                 return;
             }
@@ -349,9 +392,7 @@ export async function speakText(textToSpeak, elementToHighlight = null, onBounda
 export function populateVoiceList(selectElement) {
     if (!selectElement || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
-    let voices = window.speechSynthesis.getVoices();
-    if (voices.length === 0) voices = window.speechSynthesis.getVoices();
-
+    const voices = getCachedVoicesSync();
     const savedVoiceName = localStorage.getItem(VOICE_PREF_KEY);
     const seenNames = new Set();
 
@@ -377,7 +418,8 @@ export function populateVoiceList(selectElement) {
             const safeName = escapeHtml(voice.name);
             const safeLang = escapeHtml(voice.lang);
             const badge = isHighQuality(voice) ? ' ★' : '';
-            return `<option value="${safeName}" ${isSelected}>${safeName} (${safeLang})${badge}</option>`;
+            const fastTag = voice.localService ? ' ⚡' : '';
+            return `<option value="${safeName}" ${isSelected}>${safeName} (${safeLang})${badge}${fastTag}</option>`;
         }).join('');
     }
     selectElement.innerHTML = html;

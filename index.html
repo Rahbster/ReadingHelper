@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="referrer" content="no-referrer">
     <title>Reading Helper</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap">
     <link rel="stylesheet" href="css/style.css">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180x180.png">
@@ -23,6 +26,16 @@
             <h1>Reading Helper</h1>
         </div>
         <div class="header-buttons">
+            <div class="header-speed-control header-reader-only">
+                <label for="reading-speed-slider"><span class="btn-label">Speed: </span><span class="speed-display-val">1.0</span>x</label>
+                <input id="reading-speed-slider" type="range" class="speed-slider-input" min="0.8" max="2.0" step="0.1" value="1.0" aria-label="Reading Speed">
+            </div>
+            <button type="button" id="btn-read-along" class="theme-button header-reader-only" aria-label="Story Teller" title="Story Teller">
+                🔊 <span class="btn-label">Story Teller</span>
+            </button>
+            <button type="button" id="btn-read-aloud" class="theme-button header-reader-only" aria-label="Karaoke Mode" title="Karaoke Mode">
+                🎤 <span class="btn-label">Karaoke Mode</span>
+            </button>
             <button type="button" id="choose-story-btn" class="theme-button header-reader-only" aria-label="Choose a Story" title="Choose a Story">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" role="img" aria-hidden="true">
                     <rect x="4" y="6" width="4" height="14" rx="1" opacity="0.6"/>

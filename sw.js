@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reading-helper-cache-v20';
+const CACHE_NAME = 'reading-helper-cache-v21';
 
 // App Shell - core files required for offline startup
 const appShellFiles = [
@@ -12,6 +12,7 @@ const appShellFiles = [
     './js/KaraokeMatcher.js',
     './js/sound-effects.js',
     './js/utils/dom-utils.js',
+    './js/utils/perf-monitor.js',
     './js/ai-manager.js',
     './js/ToastManager.js',
     './js/ChatManager.js',
@@ -43,7 +44,7 @@ self.addEventListener('install', (event) => {
 
             let stories = [];
             try {
-                const storyListResponse = await fetch('./stories.json');
+                const storyListResponse = await fetch('./stories.json', { cache: 'no-cache' });
                 if (storyListResponse.ok) {
                     stories = await storyListResponse.json();
                 }
@@ -58,26 +59,24 @@ self.addEventListener('install', (event) => {
             ]);
 
             const imageFiles = [];
-            const imageRegex = /\[IMAGE:\s*(.*?)\s*\]/g;
-
-            for (const story of stories) {
-                let storyText = '';
-                try {
-                    const storyTextResponse = await fetch(`./${story.path}story.txt`);
-                    if (storyTextResponse.ok) {
-                        storyText = await storyTextResponse.text();
+            await Promise.all(
+                stories.map(async (story) => {
+                    try {
+                        const storyTextResponse = await fetch(`./${story.path}story.txt`, { cache: 'no-cache' });
+                        if (!storyTextResponse.ok) return;
+                        const storyText = await storyTextResponse.text();
+                        const imageRegex = /\[IMAGE:\s*(.*?)\s*\]/g;
+                        let match;
+                        while ((match = imageRegex.exec(storyText)) !== null) {
+                            const imagePath = match[1].trim();
+                            const fullImagePath = `./${story.path}${imagePath}`.replace(/ /g, '%20');
+                            imageFiles.push(fullImagePath);
+                        }
+                    } catch (e) {
+                        console.warn(`Could not fetch story text for ${story.path} during cache-fill.`);
                     }
-                } catch (e) {
-                    console.warn(`Could not fetch story text for ${story.path} during cache-fill.`);
-                }
-
-                let match;
-                while ((match = imageRegex.exec(storyText)) !== null) {
-                    const imagePath = match[1].trim();
-                    const fullImagePath = `./${story.path}${imagePath}`.replace(/ /g, '%20');
-                    imageFiles.push(fullImagePath);
-                }
-            }
+                })
+            );
 
             const urlsToCache = [...new Set([
                 ...appShellFiles,
@@ -89,7 +88,7 @@ self.addEventListener('install', (event) => {
             await Promise.all(
                 urlsToCache.map(async (url) => {
                     try {
-                        const response = await fetch(url);
+                        const response = await fetch(url, { cache: 'no-cache' });
                         if (response.ok) {
                             await cache.put(url, response);
                         }
