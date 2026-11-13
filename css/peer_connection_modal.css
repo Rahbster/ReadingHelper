@@ -7,8 +7,13 @@
 #peer-modal .close-modal,
 #peer-info-modal .close-modal {
     position: absolute;
-    top: 12px;
-    right: 16px;
+    top: 8px;
+    right: 10px;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: none;
     color: var(--muted-text);
@@ -16,7 +21,8 @@
     font-weight: bold;
     cursor: pointer;
     line-height: 1;
-    padding: 4px 8px;
+    padding: 4px;
+    border-radius: 8px;
 }
 
 #peer-modal .close-modal:hover,

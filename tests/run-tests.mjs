@@ -7,8 +7,14 @@ import assert from 'assert';
 import fs from 'fs';
 import { escapeHtml, cleanWordToken } from '../js/utils/dom-utils.js';
 import { getPhoneticCode, editDistance, isWordsMatch, KaraokeSession } from '../js/KaraokeMatcher.js';
-import { tokenizeStory, buildStoryHtml, computeNextSentenceRange } from '../js/ReaderEngine.js';
-import { getSyllables } from '../js/VoiceManager.js';
+import {
+    tokenizeStory,
+    buildStoryHtml,
+    computeNextSentenceRange,
+    buildSpeechSegment,
+    resolveSegmentWordIndex
+} from '../js/ReaderEngine.js';
+import { getSyllables, normalizeWordForSpeech, selectPreferredVoice } from '../js/VoiceManager.js';
 import { GameManager, getMinimalPairPartners } from '../js/GameManager.js';
 
 let passed = 0;
@@ -53,8 +59,8 @@ test('tokenizeStory separates dialogue quotes, preserves character offsets, and 
         assert.strictEqual(sample.substring(w.start, w.end), w.raw);
     }
 
-    // 'Yes!' ends a sentence, 'witch.' ends a sentence, 'away.' ends a sentence
-    assert.strictEqual(words[0].sentenceEnd, true, 'Yes! should end sentence');
+    // 'Yes!' continues into lowercase dialogue tag 'cried', so sentence ends at 'witch.' and 'away.'
+    assert.strictEqual(words[0].sentenceEnd, false, 'Yes! followed by lowercase dialogue tag stays in same sentence');
     assert.strictEqual(words[1].sentenceEnd, false, 'cried should not end sentence');
     assert.strictEqual(words[3].sentenceEnd, true, 'witch. should end sentence');
     assert.strictEqual(words[6].sentenceEnd, true, 'away. should end sentence');
@@ -74,7 +80,11 @@ test('computeNextSentenceRange chunks sentences instead of reading whole story a
     assert.deepStrictEqual(r3, { start: 8, end: 11 }); // "Then she went outside"
 });
 
-test('buildStoryHtml wraps paragraphs in <p> blocks and neutralizes XSS in image tags and text', () => {
+test('buildStoryHtml wraps paragraphs in <p> blocks, renders empty-state CTA, and neutralizes XSS', () => {
+    const emptyHtml = buildStoryHtml('');
+    assert.ok(emptyHtml.includes('story-empty-state'), 'Empty story should render welcoming empty state');
+    assert.ok(emptyHtml.includes('data-action="open-story-modal"'), 'Empty story should render Choose a Story CTA');
+
     const malicious = `First paragraph <script>alert(1)</script>.\n\n[IMAGE: bad.webp" onerror="alert(2)]\n\nSecond paragraph.`;
     const html = buildStoryHtml(malicious, { isCreatorMode: true });
 
@@ -88,6 +98,61 @@ test('VoiceManager.getSyllables strips quotes and applies phonetic overrides', (
     assert.strictEqual(getSyllables('"porridge!"', phonetics), 'por-ij');
     assert.strictEqual(getSyllables("'happily'", phonetics), 'hap-i-lee');
     assert.strictEqual(getSyllables('the', phonetics), 'the');
+});
+
+test('VoiceManager.normalizeWordForSpeech fixes interjections ("Ahhh"), stretched words, and ALL-CAPS spell-outs', () => {
+    assert.strictEqual(normalizeWordForSpeech('Ahhh'), 'aah');
+    assert.strictEqual(normalizeWordForSpeech('"Ahhh,"'), 'aah');
+    assert.strictEqual(normalizeWordForSpeech('Buzzz-off'), 'buzz-off');
+    assert.strictEqual(normalizeWordForSpeech('Nooo'), 'no');
+    assert.strictEqual(normalizeWordForSpeech('Sooo'), 'so');
+    assert.strictEqual(normalizeWordForSpeech('whoooosh'), 'whoosh');
+    assert.strictEqual(normalizeWordForSpeech('AND'), 'and');
+    assert.strictEqual(normalizeWordForSpeech("THAT'S"), "that's");
+    assert.strictEqual(normalizeWordForSpeech('WITCH'), 'witch');
+    assert.strictEqual(normalizeWordForSpeech('TV'), 'TV');
+    assert.strictEqual(normalizeWordForSpeech('plait', { plait: 'plat' }), 'plat');
+});
+
+test('VoiceManager.selectPreferredVoice prioritizes warm natural voices and avoids novelty voices', () => {
+    const mockVoices = [
+        { name: 'Albert', lang: 'en-US', localService: true },
+        { name: 'Microsoft David - English (United States)', lang: 'en-US', localService: true },
+        { name: 'Microsoft Zira - English (United States)', lang: 'en-US', localService: true },
+        { name: 'Microsoft Aria Online (Natural) - English (United States)', lang: 'en-US', localService: false }
+    ];
+    const picked = selectPreferredVoice(mockVoices);
+    assert.strictEqual(picked.name, 'Microsoft Aria Online (Natural) - English (United States)');
+
+    const sapiOnly = selectPreferredVoice(mockVoices.slice(0, 3));
+    assert.strictEqual(sapiOnly.name, 'Microsoft Zira - English (United States)');
+});
+
+test('buildSpeechSegment & resolveSegmentWordIndex align highlights accurately even when word length changes', () => {
+    const sample = `"Ahhh, this *wisp* is right," she said.\n\nNext paragraph.`;
+    const tokens = tokenizeStory(sample);
+    const words = tokens.filter((t) => t.type === 'word');
+    const range = computeNextSentenceRange(words, 0);
+
+    const segment = buildSpeechSegment(sample, words, range, { ahhh: 'aah' });
+    assert.strictEqual(segment.spokenText, 'aah, this wisp is right, she said.');
+    assert.strictEqual(segment.pauseAfterSentenceMs, 420);
+
+    // "Ahhh" (4 chars) became "aah" (3 chars); verify subsequent word offsets stay exact
+    for (const item of segment.words) {
+        assert.strictEqual(segment.spokenText.slice(item.spokenStart, item.spokenEnd), item.spokenWord);
+    }
+
+    assert.strictEqual(resolveSegmentWordIndex(segment, 0), 0); // "aah"
+    assert.strictEqual(resolveSegmentWordIndex(segment, 5), 1); // "this"
+    assert.strictEqual(resolveSegmentWordIndex(segment, 10), 2); // "wisp" (no asterisks)
+    assert.strictEqual(resolveSegmentWordIndex(segment, 29), 6); // "said"
+
+    // Ellipsis should not split dramatic continuations into choppy fragments
+    const ellipsisSample = 'Then out rose... A truly magnificent broom!';
+    const ellipsisWords = tokenizeStory(ellipsisSample).filter((t) => t.type === 'word');
+    const ellipsisRange = computeNextSentenceRange(ellipsisWords, 0);
+    assert.deepStrictEqual(ellipsisRange, { start: 0, end: 6 });
 });
 
 test('KaraokeMatcher matches homophones, digits, custom pronunciations, and tracks skips', () => {
@@ -179,6 +244,18 @@ test('Project integrity: HTML IDs, Service Worker appShellFiles, Manifest icons,
             assert.ok(fs.existsSync(imgPath), `Missing story image: ${imgPath}`);
         }
     }
+});
+
+test('UI/CSS regression guard: modal scroll containment, story-group flex-shrink protection, and inert sidenav', () => {
+    const styleCss = fs.readFileSync('css/style.css', 'utf8');
+    const sidenavCss = fs.readFileSync('css/sidenav.css', 'utf8');
+    const html = fs.readFileSync('index.html', 'utf8');
+
+    assert.ok(/\.story-group\s*\{[^}]*flex-shrink:\s*0/s.test(styleCss), '.story-group must have flex-shrink: 0 so stories are never squashed or clipped');
+    assert.ok(/#story-list[\s\S]*?overscroll-behavior:\s*contain/.test(styleCss), '#story-list must contain scroll chaining');
+    assert.ok(/body\.modal-open[\s\S]*?overflow:\s*hidden/.test(styleCss), 'body.modal-open must lock background scroll');
+    assert.ok(/visibility:\s*hidden/.test(sidenavCss), 'Closed .sidenav must hide focusable children from Tab order');
+    assert.ok(/<nav id="sidenav"[^>]*\binert\b/.test(html), 'Initial closed #sidenav in index.html must carry inert attribute');
 });
 
 console.log(`\nResults: ${passed} passed, ${failed} failed.`);

@@ -399,7 +399,7 @@ export async function openGameSetSelector() {
     // Dynamic Tricky Words practice set
     if (trickyWords.length >= 4) {
         const isSelected = selectedItemType === 'tricky' ? 'selected' : '';
-        html += '<div class="story-group-header">Personalized Practice</div>';
+        html += '<div class="list-section-label">Personalized Practice</div>';
         html += `
             <button type="button" class="story-item game-set-item ${isSelected}" data-id="__tricky__" data-type="tricky">
                 <span class="story-item-title">🎯 My Tricky Words</span>
@@ -409,7 +409,7 @@ export async function openGameSetSelector() {
 
     // Word Sets
     if (sets.length > 0) {
-        html += `<div class="story-group-header" style="${trickyWords.length >= 4 ? 'margin-top: 15px;' : ''}">Word Sets</div>`;
+        html += '<div class="list-section-label">Word Sets</div>';
         html += sets.map((set) => {
             const count = set.words.split(',').map((w) => w.trim()).filter(Boolean).length;
             const isSelected = set.id === selectedGameSetId && selectedItemType === 'set' ? 'selected' : '';
@@ -423,7 +423,7 @@ export async function openGameSetSelector() {
 
     // Stories
     if (userStories.length > 0 || defaultStories.length > 0) {
-        html += '<div class="story-group-header" style="margin-top: 15px;">Stories</div>';
+        html += '<div class="list-section-label">Stories</div>';
         html += userStories.map((story) => {
             const isSelected = story.id === selectedGameSetId && selectedItemType === 'story' ? 'selected' : '';
             return `
@@ -445,6 +445,10 @@ export async function openGameSetSelector() {
 
     dom.gameSetSelectList.innerHTML = html;
     openDialog(dom.gameSetSelectModal);
+    const activeItem = dom.gameSetSelectList.querySelector('.game-set-item.selected');
+    if (activeItem) {
+        activeItem.scrollIntoView({ block: 'nearest' });
+    }
 }
 
 export function handleGameSetSelection(e) {

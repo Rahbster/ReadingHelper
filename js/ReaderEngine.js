@@ -1,10 +1,11 @@
 /**
  * ReaderEngine.js
  * Safe paragraph-preserving story renderer, word tokenizer with exact character offsets,
- * and sentence range calculator for Story Teller TTS synchronization.
+ * and speech-segment builder for Story Teller TTS synchronization.
  */
 
 import { escapeHtml } from './utils/dom-utils.js';
+import { normalizeWordForSpeech } from './VoiceManager.js';
 
 /**
  * Splits story text into an ordered array of tokens preserving exact character offsets
@@ -45,8 +46,12 @@ export function tokenizeStory(text) {
         }
     }
 
-    // Second pass: mark sentenceEnd = true on words followed by sentence-ending punctuation,
+    // Second pass: mark sentenceEnd = true on words followed by terminal punctuation (. ! ?),
     // paragraph breaks, image blocks, or end-of-story.
+    // Exceptions that stay in one smooth utterance:
+    //  1. Ellipses (... or …) such as "Then out rose... A truly magnificent broom!"
+    //  2. Exclamations/questions followed on the same line by a lowercase dialogue tag
+    //     such as `"This porridge is too hot!" she exclaimed.` or `'Yes!' cried the witch.`
     let lastWordToken = null;
     for (let i = 0; i < rawTokens.length; i++) {
         const tok = rawTokens[i];
@@ -56,9 +61,25 @@ export function tokenizeStory(text) {
             if (tok.type === 'newline' || tok.type === 'image') {
                 lastWordToken.sentenceEnd = true;
                 lastWordToken = null;
-            } else if (tok.type === 'punct' && /[.!?]/.test(tok.raw)) {
-                lastWordToken.sentenceEnd = true;
-                lastWordToken = null;
+            } else if (tok.type === 'punct') {
+                const strippedQuotes = tok.raw.replace(/[\s"'”’)\]]+/g, '');
+                const isEllipsis = /^(?:\.{2,}|…+)$/.test(strippedQuotes);
+                if (!isEllipsis && /[.!?]/.test(strippedQuotes)) {
+                    // Peek ahead to next word before any newline/image
+                    let nextWord = null;
+                    for (let j = i + 1; j < rawTokens.length; j++) {
+                        if (rawTokens[j].type === 'newline' || rawTokens[j].type === 'image') break;
+                        if (rawTokens[j].type === 'word') {
+                            nextWord = rawTokens[j];
+                            break;
+                        }
+                    }
+                    const continuesLowercase = Boolean(nextWord && /^[a-z]/.test(nextWord.raw));
+                    if (!continuesLowercase) {
+                        lastWordToken.sentenceEnd = true;
+                        lastWordToken = null;
+                    }
+                }
             }
         }
     }
@@ -154,7 +175,10 @@ function renderImageBlock(identifier, options) {
  */
 export function buildStoryHtml(text, options = {}) {
     if (!text || !text.trim()) {
-        return '<p class="story-empty-hint">The story will appear here. Tap on any word to hear it read aloud.</p>';
+        return `<div class="story-empty-state">
+            <p class="story-empty-hint">Pick a story to start reading! Tap any word to hear it aloud, or press and hold to see its syllables.</p>
+            <button type="button" class="theme-button" data-action="open-story-modal">📖 Choose a Story</button>
+        </div>`;
     }
 
     const tokens = tokenizeStory(text);
@@ -216,4 +240,133 @@ export function computeNextSentenceRange(wordMetadata, startIndex, maxWords = 35
         }
     }
     return { start: safeStart, end: endIndex };
+}
+
+/**
+ * Normalizes inter-word characters for natural TTS prosody (removes [IMAGE] tags and
+ * markdown emphasis markers like *wisp*, while preserving commas and pauses).
+ * @param {string} rawBetween
+ * @returns {string}
+ */
+function cleanInterWordText(rawBetween) {
+    if (!rawBetween) return ' ';
+    const cleaned = rawBetween
+        .replace(/\[IMAGE:[^\]]*\]/g, ' ')
+        .replace(/[*_~`"“”'‘’]+/g, '')
+        .replace(/\s*(?:--|—)\s*/g, ', ')
+        .replace(/\s+/g, ' ');
+    return cleaned || ' ';
+}
+
+/**
+ * Builds a TTS-ready speech segment for `[range.start .. range.end]` with an exact
+ * character-offset map into `spokenText` (eliminating `charIndex` drift when words like
+ * "Ahhh" -> "aah" change length) plus syllable-weighted duration estimates for browsers
+ * whose cloud voices omit `onboundary` events.
+ *
+ * @param {string} text
+ * @param {Array<{start:number, end:number, sentenceEnd:boolean}>} wordMetadata
+ * @param {{ start: number, end: number }} range
+ * @param {Object<string,string>} [customPronunciations={}]
+ */
+export function buildSpeechSegment(text, wordMetadata, range, customPronunciations = {}) {
+    if (!text || !wordMetadata || wordMetadata.length === 0) {
+        return { spokenText: '', words: [], pauseAfterSentenceMs: 180 };
+    }
+
+    const parts = [];
+    const words = [];
+    let cursor = 0;
+
+    for (let i = range.start; i <= range.end; i++) {
+        const meta = wordMetadata[i];
+        if (!meta) continue;
+
+        if (i > range.start) {
+            const prevMeta = wordMetadata[i - 1];
+            const rawBetween = text.substring(prevMeta.end, meta.start);
+            const cleanedBetween = cleanInterWordText(rawBetween);
+            parts.push(cleanedBetween);
+            cursor += cleanedBetween.length;
+        }
+
+        const rawWord = text.substring(meta.start, meta.end);
+        const spokenWord = normalizeWordForSpeech(rawWord, customPronunciations) || rawWord;
+        const spokenStart = cursor;
+        const spokenEnd = cursor + spokenWord.length;
+
+        parts.push(spokenWord);
+        cursor = spokenEnd;
+
+        // Inspect punctuation immediately following this word for cadence fallback timing
+        const nextBoundary = i < range.end
+            ? wordMetadata[i + 1].start
+            : Math.min(text.length, meta.end + 6);
+        const trailingGap = text.substring(meta.end, nextBoundary);
+        let pauseMs = 0;
+        if (/(?:\.{2,}|…)/.test(trailingGap)) pauseMs = 260;
+        else if (/[,;:\u2014]/.test(trailingGap)) pauseMs = 175;
+
+        const vowelGroups = (spokenWord.match(/[aeiouy]+/gi) || []).length || 1;
+        const extraChars = Math.max(0, spokenWord.length - 4);
+        const estimatedDurationMs = Math.max(150, 90 + vowelGroups * 115 + extraChars * 14) + pauseMs;
+
+        words.push({
+            wordIndex: i,
+            rawWord,
+            spokenWord,
+            spokenStart,
+            spokenEnd,
+            estimatedDurationMs
+        });
+    }
+
+    // Preserve terminal sentence punctuation (. ! ?) for natural TTS intonation,
+    // and add a warmer pause after paragraph / illustration breaks.
+    const lastMeta = wordMetadata[range.end];
+    const nextWordStart = wordMetadata[range.end + 1] ? wordMetadata[range.end + 1].start : text.length;
+    const afterEnd = lastMeta ? text.substring(lastMeta.end, nextWordStart) : '';
+    const terminalMatch = afterEnd.match(/^[\s"'”’)\]*_]*([.!?]+)/);
+    if (terminalMatch && terminalMatch[1]) {
+        parts.push(terminalMatch[1]);
+    }
+
+    const hasParagraphOrImageBreak = /\r?\n|\[IMAGE:/.test(afterEnd);
+    const pauseAfterSentenceMs = hasParagraphOrImageBreak ? 420 : 170;
+
+    return {
+        spokenText: parts.join(''),
+        words,
+        pauseAfterSentenceMs
+    };
+}
+
+/**
+ * Maps a `SpeechSynthesisEvent.charIndex` within `segment.spokenText` back to the exact
+ * story `wordIndex`, gracefully handling boundary events that land on opening quotes or whitespace.
+ *
+ * @param {{ spokenText: string, words: Array<{wordIndex:number, spokenStart:number, spokenEnd:number}> }} segment
+ * @param {number} spokenCharIndex
+ * @returns {number|null}
+ */
+export function resolveSegmentWordIndex(segment, spokenCharIndex) {
+    if (!segment || !segment.words || segment.words.length === 0) return null;
+    const idx = Math.max(0, Number(spokenCharIndex) || 0);
+
+    for (let k = 0; k < segment.words.length; k++) {
+        const item = segment.words[k];
+        if (idx >= item.spokenStart && idx < item.spokenEnd) {
+            return item.wordIndex;
+        }
+        if (idx < item.spokenStart) {
+            const gap = segment.spokenText.slice(idx, item.spokenStart);
+            // If charIndex points to opening quotes/spaces right before this word (not a trailing comma of previous word)
+            if (!/[A-Za-z0-9]/.test(gap) && (k === 0 || !/^[,;:.!?]/.test(gap))) {
+                return item.wordIndex;
+            }
+            return k > 0 ? segment.words[k - 1].wordIndex : item.wordIndex;
+        }
+    }
+
+    return segment.words[segment.words.length - 1].wordIndex;
 }

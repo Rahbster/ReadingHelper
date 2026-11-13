@@ -10,7 +10,12 @@ import { GameManager } from './GameManager.js';
 import * as VoiceManager from './VoiceManager.js';
 import { SpeechRecognitionManager } from './SpeechRecognitionManager.js';
 import * as GameUI from './GameUI.js';
-import { buildStoryHtml, computeNextSentenceRange } from './ReaderEngine.js';
+import {
+    buildStoryHtml,
+    computeNextSentenceRange,
+    buildSpeechSegment,
+    resolveSegmentWordIndex
+} from './ReaderEngine.js';
 import { KaraokeSession } from './KaraokeMatcher.js';
 import { playGameCorrectSound, playGameWrongSound } from './sound-effects.js';
 import {
@@ -30,6 +35,7 @@ const dom = {
     creatorArea: document.getElementById('creator-area'),
     creatorModeBtn: document.getElementById('creator-mode-btn'),
     toggleDashboardBtn: document.getElementById('toggle-dashboard-btn'),
+    dashboardBackBtn: document.getElementById('dashboard-back-btn'),
     readerView: document.getElementById('reader-view'),
     dashboardView: document.getElementById('dashboard-view'),
     trickyWordsList: document.getElementById('tricky-words-list'),
@@ -143,6 +149,7 @@ let readingRate = 1.0;
 let isReadAlongPaused = false;
 let readAlongSessionId = 0;
 let speedUpdateTimeout = null;
+const boundaryCapableVoices = new Set();
 
 let renderTimeout;
 const handleStoryInputPreview = () => {
@@ -174,7 +181,14 @@ const gameManager = new GameManager({
 const chatManager = new ChatManager(peerAdapter, () => ({
     name: localStorage.getItem('readinghelper_display_name') || 'Anonymous'
 }));
-export const uiManager = new UIManager(dom, chatManager, toastManager);
+export const uiManager = new UIManager(dom, chatManager, toastManager, {
+    onLeaveReaderView: () => {
+        stopReadAlongIfActive();
+        if (sttManager && sttManager.isActive) {
+            sttManager.stop();
+        }
+    }
+});
 
 GameUI.init({
     dom,
@@ -335,6 +349,13 @@ function loadPreferences() {
     }
 }
 
+function setHeaderButtonLabel(btn, icon, label) {
+    if (!btn) return;
+    btn.innerHTML = `${icon} <span class="btn-label">${label}</span>`;
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+}
+
 function injectReadAloudUI() {
     if (!sttManager.isSupported()) return;
 
@@ -342,8 +363,8 @@ function injectReadAloudUI() {
     btnReadAloud = document.createElement('button');
     btnReadAloud.type = 'button';
     btnReadAloud.id = 'btn-read-aloud';
-    btnReadAloud.className = 'theme-button';
-    btnReadAloud.innerHTML = '🎤 <span class="btn-label">Karaoke Mode</span>';
+    btnReadAloud.className = 'theme-button header-reader-only';
+    setHeaderButtonLabel(btnReadAloud, '🎤', 'Karaoke Mode');
     btnReadAloud.addEventListener('click', toggleReadAloud);
     headerButtons.prepend(btnReadAloud);
 }
@@ -352,7 +373,7 @@ function injectReadAlongUI() {
     const headerButtons = document.querySelector('.header-buttons');
 
     const container = document.createElement('div');
-    container.className = 'header-speed-control';
+    container.className = 'header-speed-control header-reader-only';
     container.innerHTML = `
         <label for="reading-speed-slider"><span class="btn-label">Speed: </span><span class="speed-display-val">${readingRate.toFixed(1)}</span>x</label>
         <input id="reading-speed-slider" type="range" class="speed-slider-input" min="0.8" max="2.0" step="0.1" value="${readingRate}" aria-label="Reading Speed">
@@ -364,12 +385,21 @@ function injectReadAlongUI() {
     btnReadAlong = document.createElement('button');
     btnReadAlong.type = 'button';
     btnReadAlong.id = 'btn-read-along';
-    btnReadAlong.className = 'theme-button';
-    btnReadAlong.innerHTML = '🔊 <span class="btn-label">Story Teller</span>';
+    btnReadAlong.className = 'theme-button header-reader-only';
+    setHeaderButtonLabel(btnReadAlong, '🔊', 'Story Teller');
     btnReadAlong.addEventListener('click', toggleReadAlong);
 
     headerButtons.prepend(btnReadAlong);
     headerButtons.prepend(container);
+}
+
+function stopReadAlongIfActive() {
+    if (!isReadingAlong) return;
+    readAlongSessionId++;
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+    }
+    handleReadAlongEnd();
 }
 
 function toggleReadAlong() {
@@ -377,8 +407,7 @@ function toggleReadAlong() {
         if (isReadAlongPaused) {
             toggleReadAlongPause();
         } else {
-            window.speechSynthesis.cancel();
-            handleReadAlongEnd();
+            stopReadAlongIfActive();
         }
     } else {
         // Stop Karaoke Mode first so microphone doesn't transcribe computer speech
@@ -402,17 +431,23 @@ async function startReadAlong() {
     isReadAlongPaused = false;
     if (btnReadAlong) {
         btnReadAlong.classList.add('speaking');
-        btnReadAlong.innerHTML = '🛑 <span class="btn-label">Stop</span>';
+        setHeaderButtonLabel(btnReadAlong, '🛑', 'Stop Story Teller');
+    }
+
+    // Ensure the starting word is immediately scrolled into view without smooth-scroll lag
+    const initialEl = storyWordElements[currentReadAlongIndex];
+    if (initialEl) {
+        scrollToWord(initialEl, true);
     }
 
     while (isReadingAlong && currentReadAlongIndex < storyWordElements.length && mySession === readAlongSessionId) {
         const range = computeNextSentenceRange(storyWordMetadata, currentReadAlongIndex);
-        await runSentenceRead(range, mySession);
+        const pauseAfterMs = await runSentenceRead(range, mySession);
 
         currentReadAlongIndex = range.end + 1;
 
-        if (isReadingAlong && !isReadAlongPaused && mySession === readAlongSessionId) {
-            await new Promise((r) => setTimeout(r, 180));
+        if (isReadingAlong && !isReadAlongPaused && mySession === readAlongSessionId && currentReadAlongIndex < storyWordElements.length) {
+            await new Promise((r) => setTimeout(r, pauseAfterMs));
         }
     }
 
@@ -423,55 +458,122 @@ async function startReadAlong() {
 
 async function runSentenceRead(range, sessionId) {
     const text = dom.storyInput.value;
-    const startMeta = storyWordMetadata[range.start];
-    const endMeta = storyWordMetadata[range.end];
-    if (!startMeta || !endMeta) return;
-
-    const startChar = startMeta.start;
-    // Include trailing punctuation right after the final word for natural TTS prosody
-    const rawSliceEnd = Math.min(text.length, endMeta.end + 2);
-    const sentenceText = text
-        .substring(startChar, rawSliceEnd)
-        .replace(/\[IMAGE:[^\]]*\]/g, (m) => ' '.repeat(m.length));
-
-    highlightReadAlongWord(range.start);
-
-    await VoiceManager.speakText(sentenceText, null, (event) => {
-        if (sessionId !== readAlongSessionId || isReadAlongPaused) return;
-        const absoluteCharIndex = (event.charIndex || 0) + startChar;
-
-        for (let i = range.start; i <= range.end; i++) {
-            if (absoluteCharIndex >= storyWordMetadata[i].start && absoluteCharIndex < storyWordMetadata[i].end) {
-                if (i !== currentReadAlongIndex) {
-                    currentReadAlongIndex = i;
-                    highlightReadAlongWord(i);
-                }
-                break;
-            }
-        }
-    }, readingRate);
-}
-
-function highlightReadAlongWord(index) {
-    const el = storyWordElements[index];
-    if (!el || el === lastHighlightedReadAlongElement) return;
-
-    if (lastHighlightedReadAlongElement) {
-        lastHighlightedReadAlongElement.classList.remove('read-along-highlight');
+    const segment = buildSpeechSegment(text, storyWordMetadata, range, currentPronunciations);
+    if (!segment.spokenText || segment.words.length === 0) {
+        return 170;
     }
-    el.classList.add('read-along-highlight');
-    lastHighlightedReadAlongElement = el;
-    scrollToWord(el);
+
+    let nativeBoundarySeen = false;
+    let fallbackTimerId = null;
+    let fallbackCursor = 0;
+    let activeVoiceName = '';
+
+    const clearFallbackTimer = () => {
+        if (fallbackTimerId !== null) {
+            clearTimeout(fallbackTimerId);
+            fallbackTimerId = null;
+        }
+    };
+
+    // Cadence fallback keeps yellow word highlights moving smoothly when a browser voice
+    // (such as Chrome's remote "Google US English") does not emit `onboundary` events.
+    // Yields immediately the moment any native `onboundary` word event arrives.
+    const scheduleFallbackStep = () => {
+        clearFallbackTimer();
+        if (nativeBoundarySeen || sessionId !== readAlongSessionId || !isReadingAlong) return;
+        if (fallbackCursor >= segment.words.length - 1) return;
+
+        const currentItem = segment.words[fallbackCursor];
+        const graceMs = activeVoiceName && boundaryCapableVoices.has(activeVoiceName) ? 140 : 0;
+        const stepDelayMs = Math.max(
+            110,
+            Math.round(currentItem.estimatedDurationMs / Math.max(0.65, readingRate)) + graceMs
+        );
+
+        fallbackTimerId = setTimeout(() => {
+            fallbackTimerId = null;
+            if (nativeBoundarySeen || sessionId !== readAlongSessionId || !isReadingAlong) return;
+            if (isReadAlongPaused) {
+                fallbackTimerId = setTimeout(scheduleFallbackStep, 120);
+                return;
+            }
+            if (fallbackCursor + 1 < segment.words.length) {
+                fallbackCursor += 1;
+                const nextIdx = segment.words[fallbackCursor].wordIndex;
+                currentReadAlongIndex = nextIdx;
+                highlightReadAlongWord(nextIdx);
+                scheduleFallbackStep();
+            }
+        }, stepDelayMs);
+    };
+
+    try {
+        await VoiceManager.speakText(
+            segment.spokenText,
+            null,
+            (event) => {
+                if (sessionId !== readAlongSessionId || isReadAlongPaused || !isReadingAlong) return;
+
+                const resolvedIndex = resolveSegmentWordIndex(segment, event.charIndex || 0);
+                if (resolvedIndex === null) return;
+
+                if (resolvedIndex > range.start || (event.charIndex || 0) > 0) {
+                    nativeBoundarySeen = true;
+                    if (activeVoiceName) boundaryCapableVoices.add(activeVoiceName);
+                    clearFallbackTimer();
+                }
+
+                currentReadAlongIndex = resolvedIndex;
+                highlightReadAlongWord(resolvedIndex);
+            },
+            readingRate,
+            {
+                isSingleWord: false,
+                cancelExisting: range.start === 0,
+                onStart: ({ voice } = {}) => {
+                    if (sessionId !== readAlongSessionId || !isReadingAlong) return;
+                    activeVoiceName = voice?.name || '';
+                    currentReadAlongIndex = range.start;
+                    highlightReadAlongWord(range.start, range.start === 0);
+                    if (segment.words.length > 1) {
+                        scheduleFallbackStep();
+                    }
+                }
+            }
+        );
+    } finally {
+        clearFallbackTimer();
+    }
+
+    return segment.pauseAfterSentenceMs;
 }
 
-function scrollToWord(el) {
+function highlightReadAlongWord(index, immediateScroll = false) {
+    const el = storyWordElements[index];
+    if (!el) return;
+
+    if (el !== lastHighlightedReadAlongElement) {
+        if (lastHighlightedReadAlongElement) {
+            lastHighlightedReadAlongElement.classList.remove('read-along-highlight');
+        }
+        el.classList.add('read-along-highlight');
+        lastHighlightedReadAlongElement = el;
+    }
+    scrollToWord(el, immediateScroll);
+}
+
+function scrollToWord(el, immediate = false) {
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const isVisible = rect.top >= 150 && rect.bottom <= window.innerHeight - 150;
+    // Avoid repeatedly trying to scroll upward when already at the top of the document
+    const topThreshold = window.scrollY <= 10 ? 8 : 65;
+    const bottomThreshold = window.innerHeight - 85;
+    const isVisible = rect.top >= topThreshold && rect.bottom <= bottomThreshold;
+
     if (!isVisible) {
         el.scrollIntoView({
-            behavior: prefersReducedMotion() ? 'auto' : 'smooth',
-            block: 'center'
+            behavior: immediate || prefersReducedMotion() ? 'auto' : 'smooth',
+            block: window.scrollY <= 10 && rect.top >= 0 ? 'nearest' : 'center'
         });
     }
 }
@@ -482,11 +584,11 @@ function toggleReadAlongPause() {
     isReadAlongPaused = !isReadAlongPaused;
     if (isReadAlongPaused) {
         window.speechSynthesis.pause();
-        if (btnReadAlong) btnReadAlong.innerHTML = '▶️ <span class="btn-label">Resume</span>';
+        setHeaderButtonLabel(btnReadAlong, '▶️', 'Resume');
         toastManager.show('Story Teller paused. Tap the story to resume.', 'info', 1500);
     } else {
         window.speechSynthesis.resume();
-        if (btnReadAlong) btnReadAlong.innerHTML = '🛑 <span class="btn-label">Stop</span>';
+        setHeaderButtonLabel(btnReadAlong, '🛑', 'Stop Story Teller');
         toastManager.show('Resuming...', 'info', 1000);
     }
 }
@@ -505,7 +607,7 @@ function handleReadAlongEnd() {
     isReadAlongPaused = false;
     if (btnReadAlong) {
         btnReadAlong.classList.remove('speaking');
-        btnReadAlong.innerHTML = '🔊 <span class="btn-label">Story Teller</span>';
+        setHeaderButtonLabel(btnReadAlong, '🔊', 'Story Teller');
     }
     if (lastHighlightedReadAlongElement) {
         lastHighlightedReadAlongElement.classList.remove('read-along-highlight');
@@ -522,11 +624,7 @@ function toggleReadAloud() {
             return;
         }
         // Stop Story Teller if currently speaking
-        if (isReadingAlong) {
-            readAlongSessionId++;
-            window.speechSynthesis.cancel();
-            handleReadAlongEnd();
-        }
+        stopReadAlongIfActive();
         resetReadingPointer();
         sttManager.start();
         toastManager.show('Listening... Read the story out loud!', 'info');
@@ -536,9 +634,11 @@ function toggleReadAloud() {
 function handleSpeechStatusChange(isActive) {
     if (btnReadAloud) {
         btnReadAloud.classList.toggle('speaking', isActive);
-        btnReadAloud.innerHTML = isActive
-            ? '🛑 <span class="btn-label">Stop Karaoke</span>'
-            : '🎤 <span class="btn-label">Karaoke Mode</span>';
+        if (isActive) {
+            setHeaderButtonLabel(btnReadAloud, '🛑', 'Stop Karaoke');
+        } else {
+            setHeaderButtonLabel(btnReadAloud, '🎤', 'Karaoke Mode');
+        }
     }
     if (!isActive) karaokeSession.onSegmentBoundary();
     updateActiveHighlight();
@@ -605,10 +705,8 @@ function speakWordFromStory(rawText, targetElement = activeWordElement) {
     const cleanedWord = cleanWordToken(rawText);
     if (!cleanedWord) return;
 
-    let textToSpeak = cleanedWord;
-    if (currentPronunciations[cleanedWord]) {
-        textToSpeak = currentPronunciations[cleanedWord];
-    }
+    const textToSpeak = VoiceManager.normalizeWordForSpeech(rawText, currentPronunciations);
+    if (!textToSpeak) return;
 
     if (sttManager && sttManager.isActive && targetElement) {
         const tappedIndex = storyWordElements.indexOf(targetElement);
@@ -619,7 +717,7 @@ function speakWordFromStory(rawText, targetElement = activeWordElement) {
         }
     }
 
-    VoiceManager.speakText(textToSpeak, targetElement, null, readingRate);
+    VoiceManager.speakText(textToSpeak, targetElement, null, readingRate, { isSingleWord: true });
 }
 
 function trackWord(rawWord) {
@@ -847,6 +945,10 @@ function setupEventListeners() {
     });
 
     dom.storyDisplay.addEventListener('click', (e) => {
+        if (e.target.closest('[data-action="open-story-modal"]')) {
+            uiManager.openStoryModal();
+            return;
+        }
         if (e.target.classList.contains('retry-image-btn')) {
             aiManager.retryGeneration(e.target.dataset.filename, sessionImages, localImageUrls);
             return;
@@ -855,6 +957,15 @@ function setupEventListeners() {
             toggleReadAlongPause();
         }
     });
+
+    if (dom.storyList) {
+        dom.storyList.addEventListener('keydown', (e) => {
+            if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('story-item')) {
+                e.preventDefault();
+                handleStoryListClick(e);
+            }
+        });
+    }
 
     window.addEventListener('pointerup', handlePressEnd);
 }
@@ -939,7 +1050,7 @@ async function loadDefaultStories() {
 
         const groupHtml = `
             <div id="default-stories-group" class="story-group">
-                <button type="button" class="story-group-header">Read-Along Stories</button>
+                <button type="button" class="story-group-header" aria-expanded="true">Read-Along Stories</button>
                 <div class="story-group-content">${storiesHtml}</div>
             </div>
         `;
@@ -964,7 +1075,7 @@ function addLocalStoriesToModal(stories) {
     if (!group) {
         dom.storyList.insertAdjacentHTML('afterbegin', `
             <div id="local-stories-group" class="story-group">
-                <button type="button" class="story-group-header">My Stories</button>
+                <button type="button" class="story-group-header" aria-expanded="true">My Stories</button>
                 <div class="story-group-content"></div>
             </div>
         `);
@@ -1028,15 +1139,13 @@ async function insertMagicImageAtCursor() {
 
 async function handleStoryListClick(event) {
     const target = event.target;
+    const headerBtn = target.closest('.story-group-header');
 
-    if (target.classList.contains('story-group-header')) {
-        const isCollapsed = target.classList.contains('collapsed');
-        dom.storyList.querySelectorAll('.story-group-header').forEach((header) => {
-            header.classList.add('collapsed');
-            header.nextElementSibling?.classList.add('hidden');
-        });
-        target.classList.toggle('collapsed', !isCollapsed);
-        target.nextElementSibling?.classList.toggle('hidden', !isCollapsed);
+    if (headerBtn) {
+        const nextCollapsed = !headerBtn.classList.contains('collapsed');
+        headerBtn.classList.toggle('collapsed', nextCollapsed);
+        headerBtn.setAttribute('aria-expanded', String(!nextCollapsed));
+        headerBtn.nextElementSibling?.classList.toggle('hidden', nextCollapsed);
     } else if (target.closest('.story-delete-btn')) {
         const btn = target.closest('.story-delete-btn');
         const storyTitle = btn.closest('.story-item')?.querySelector('.story-item-title')?.textContent || 'Story';
@@ -1058,6 +1167,7 @@ async function handleStoryListClick(event) {
 }
 
 async function loadBuiltInOrRemoteStory(path) {
+    stopReadAlongIfActive();
     clearSharedStoryPreviewBanner();
     currentStoryPath = path;
     localImageUrls = {};
@@ -1143,6 +1253,7 @@ async function handleLoadFromUrl() {
 
         dom.storyList.querySelectorAll('.story-group-header').forEach((header) => {
             header.classList.add('collapsed');
+            header.setAttribute('aria-expanded', 'false');
             header.nextElementSibling?.classList.add('hidden');
         });
 
@@ -1168,7 +1279,7 @@ async function handleLoadFromUrl() {
 
         const newGroupHtml = `
             <div class="story-group" data-source="${escapeHtml(groupHostname)}">
-                <button type="button" class="story-group-header">${escapeHtml(groupHostname)}</button>
+                <button type="button" class="story-group-header" aria-expanded="true">${escapeHtml(groupHostname)}</button>
                 <div class="story-group-content">${newStoriesHtml}</div>
             </div>
         `;
@@ -1231,6 +1342,7 @@ async function handleStoryTransfer(storyPackage, peerName = 'Peer') {
             };
         }
 
+        stopReadAlongIfActive();
         pendingSharedStory = story;
         currentStoryId = null;
         currentStoryPath = '';
@@ -1331,6 +1443,7 @@ async function loadUserStory(id) {
     const story = await storyManager.getUserStoryById(id);
     if (!story) return;
 
+    stopReadAlongIfActive();
     clearSharedStoryPreviewBanner();
     currentStoryId = story.id;
     currentStoryPath = '';

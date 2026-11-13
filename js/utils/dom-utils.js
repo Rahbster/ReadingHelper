@@ -52,7 +52,18 @@ export function prefersReducedMotion() {
 }
 
 /**
- * Opens a <dialog> element as a top-layer modal, wiring light-dismiss on backdrop clicks.
+ * Synchronizes `body.modal-open` with whether any `<dialog>` is currently open,
+ * preventing background scroll chaining on browsers with or without `:has()`.
+ */
+function syncBodyModalLock() {
+    if (typeof document === 'undefined' || !document.body) return;
+    const anyOpen = Boolean(document.querySelector('dialog.modal[open]'));
+    document.body.classList.toggle('modal-open', anyOpen);
+}
+
+/**
+ * Opens a <dialog> element as a top-layer modal, wiring light-dismiss on backdrop clicks
+ * and native Escape-key close cleanup.
  * @param {HTMLDialogElement|HTMLElement} dialogEl
  */
 export function openDialog(dialogEl) {
@@ -74,8 +85,13 @@ export function openDialog(dialogEl) {
                     closeDialog(dialogEl);
                 }
             });
+            dialogEl.addEventListener('close', () => {
+                dialogEl.classList.add('hidden');
+                syncBodyModalLock();
+            });
         }
     }
+    syncBodyModalLock();
 }
 
 /**
@@ -88,6 +104,7 @@ export function closeDialog(dialogEl) {
         dialogEl.close();
     }
     dialogEl.classList.add('hidden');
+    syncBodyModalLock();
 }
 
 /**
@@ -166,7 +183,7 @@ export function showPromptModal({
             <form method="dialog" class="modal-content">
                 <h2>${escapeHtml(title)}</h2>
                 ${message ? `<p class="dialog-message">${escapeHtml(message)}</p>` : ''}
-                <input type="text" class="dialog-text-input" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(defaultValue)}" autocomplete="off">
+                <input type="text" class="dialog-text-input" aria-label="${escapeHtml(title)}" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(defaultValue)}" autocomplete="off">
                 <div class="modal-footer-buttons">
                     <button type="button" class="theme-button secondary" data-action="cancel">${escapeHtml(cancelText)}</button>
                     <button type="submit" class="theme-button" data-action="confirm">${escapeHtml(confirmText)}</button>

@@ -74,11 +74,11 @@ export function showPeerConnectionModal(toastManager, config) {
                         <div id="panel-join" class="role-panel hidden">
                             <div class="step-box">
                                 <h4>Join Session</h4>
-                                <p>Enter 6-Digit Host ID:</p>
+                                <label for="joiner-id-input" style="display: block; margin-bottom: 0.5rem;">Enter 6-Digit Host ID:</label>
                                 <input type="text" id="joiner-id-input" class="sdp-box" placeholder="Enter Host ID" maxlength="6" inputmode="numeric" style="text-align: center; font-size: 1.5rem; letter-spacing: 4px;">
                             </div>
                         </div>
-                        <input type="text" id="peer-search-input" class="sdp-box hidden" placeholder="Search peers..." style="margin-bottom: 0.5rem;">
+                        <input type="text" id="peer-search-input" class="sdp-box hidden" placeholder="Search peers..." aria-label="Search recent peers" style="margin-bottom: 0.5rem;">
                         <div id="recent-peers-list" class="step-box hidden"></div>
                     </div>
                 </div>

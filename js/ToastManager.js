@@ -1,3 +1,5 @@
+import { isSoundEnabled } from './sound-effects.js';
+
 /**
  * Manages the creation, display, and removal of toast notifications.
  */
@@ -88,6 +90,7 @@ export class ToastManager {
      * @param {string} type 
      */
     _playSound(type) {
+        if (!isSoundEnabled()) return;
         try {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
             if (!AudioContext) return;
@@ -202,17 +205,20 @@ export class ToastManager {
             .toast-icon svg { width: 20px; height: 20px; }
             .toast-content { flex-grow: 1; line-height: 1.4; }
 
-            .toast-notification.info { background-color: #007bff; }
-            .toast-notification.success { background-color: #28a745; }
-            .toast-notification.error { background-color: #dc3545; }
+            .toast-notification.info { background-color: #0b5ed7; }
+            .toast-notification.success { background-color: #1e7e34; }
+            .toast-notification.error { background-color: #b02a37; }
 
             .toast-close-btn {
                 background: none; border: none; color: inherit;
                 font-size: 24px; font-weight: bold; line-height: 1;
-                margin-left: 15px; padding: 0; cursor: pointer;
-                opacity: 0.7; align-self: flex-start;
+                min-width: 36px; min-height: 36px;
+                display: inline-flex; align-items: center; justify-content: center;
+                margin: -6px -6px -6px 8px; padding: 0; cursor: pointer;
+                border-radius: 6px;
+                opacity: 0.85; align-self: flex-start;
             }
-            .toast-close-btn:hover { opacity: 1; }
+            .toast-close-btn:hover { opacity: 1; background-color: rgba(255, 255, 255, 0.15); }
 
             .toast-progress-bar {
                 position: absolute;

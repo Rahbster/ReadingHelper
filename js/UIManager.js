@@ -3,10 +3,11 @@ import { openDialog, closeDialog, requireParentGate } from './utils/dom-utils.js
 import { isSoundEnabled, setSoundEnabled } from './sound-effects.js';
 
 export class UIManager {
-    constructor(dom, chatManager, toastManager) {
+    constructor(dom, chatManager, toastManager, options = {}) {
         this.dom = dom;
         this.chatManager = chatManager;
         this.toastManager = toastManager;
+        this.onLeaveReaderView = options.onLeaveReaderView || null;
         this.setupEventListeners();
     }
 
@@ -27,6 +28,9 @@ export class UIManager {
                 await this.toggleDashboard();
             });
         }
+        if (this.dom.dashboardBackBtn) {
+            this.dom.dashboardBackBtn.addEventListener('click', () => this.showView('reader'));
+        }
         if (this.dom.chooseStoryBtn) this.dom.chooseStoryBtn.addEventListener('click', () => this.openStoryModal());
         if (this.dom.storyModalXBtn) this.dom.storyModalXBtn.addEventListener('click', () => this.closeStoryModal());
 
@@ -43,7 +47,10 @@ export class UIManager {
         if (this.dom.sidenav) {
             this.dom.sidenav.classList.add('open');
             this.dom.sidenav.setAttribute('aria-hidden', 'false');
+            this.dom.sidenav.inert = false;
+            this.dom.sidenav.removeAttribute('inert');
         }
+        document.body.classList.add('nav-open');
         if (this.dom.overlay) this.dom.overlay.style.display = 'block';
 
         const name = localStorage.getItem('readinghelper_display_name') || '';
@@ -55,14 +62,26 @@ export class UIManager {
             this.dom.googleApiKeyInput.value = apiKey;
         }
         this._syncSoundToggleUI();
+        if (this.dom.closeSidenavBtn) {
+            this.dom.closeSidenavBtn.focus();
+        }
     }
 
     closeNav() {
+        const focusWasInsideNav = Boolean(
+            this.dom.sidenav && document.activeElement && this.dom.sidenav.contains(document.activeElement)
+        );
         if (this.dom.sidenav) {
             this.dom.sidenav.classList.remove('open');
             this.dom.sidenav.setAttribute('aria-hidden', 'true');
+            this.dom.sidenav.inert = true;
+            this.dom.sidenav.setAttribute('inert', '');
         }
+        document.body.classList.remove('nav-open');
         if (this.dom.overlay) this.dom.overlay.style.display = 'none';
+        if (focusWasInsideNav && this.dom.hamburgerBtn) {
+            this.dom.hamburgerBtn.focus();
+        }
     }
 
     _applyTheme(theme) {
@@ -123,20 +142,26 @@ export class UIManager {
     }
 
     showView(viewName) {
+        if (viewName !== 'reader' && typeof this.onLeaveReaderView === 'function') {
+            this.onLeaveReaderView();
+        }
+
         this.dom.readerView?.classList.add('hidden');
         this.dom.gameView?.classList.add('hidden');
         this.dom.dashboardView?.classList.add('hidden');
 
-        if (viewName === 'reader') {
+        const isReader = viewName === 'reader';
+        document.querySelectorAll('.header-reader-only').forEach((el) => {
+            el.classList.toggle('hidden', !isReader);
+        });
+
+        if (isReader) {
             this.dom.readerView?.classList.remove('hidden');
-            this.dom.chooseStoryBtn?.classList.remove('hidden');
             if (this.dom.toggleDashboardBtn) this.dom.toggleDashboardBtn.querySelector('span').textContent = 'Dashboard';
         } else if (viewName === 'game') {
             this.dom.gameView?.classList.remove('hidden');
-            this.dom.chooseStoryBtn?.classList.add('hidden');
         } else if (viewName === 'dashboard') {
             this.dom.dashboardView?.classList.remove('hidden');
-            this.dom.chooseStoryBtn?.classList.add('hidden');
             if (this.dom.toggleDashboardBtn) this.dom.toggleDashboardBtn.querySelector('span').textContent = 'Back to Reader';
         }
     }

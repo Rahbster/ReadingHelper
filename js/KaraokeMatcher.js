@@ -39,7 +39,9 @@ export const HOMOPHONE_GROUPS = [
     ['week', 'weak'],
     ['meet', 'meat'],
     ['hole', 'whole'],
-    ['peace', 'piece']
+    ['peace', 'piece'],
+    ['ah', 'ahh', 'ahhh', 'aah'],
+    ['oh', 'ohh', 'ohhh', 'ooh']
 ];
 
 const HOMOPHONE_MAP = new Map();
