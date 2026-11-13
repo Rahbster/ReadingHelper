@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reading-helper-cache-v19';
+const CACHE_NAME = 'reading-helper-cache-v20';
 
 // App Shell - core files required for offline startup
 const appShellFiles = [

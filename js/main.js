@@ -141,7 +141,9 @@ const LONG_PRESS_DURATION = 400;
 let sttManager = null;
 const karaokeSession = new KaraokeSession();
 let storyWordElements = [];
+let storyWordsList = [];
 let storyWordMetadata = [];
+let lastActiveKaraokeElement = null;
 let isReadingAlong = false;
 let currentReadAlongIndex = 0;
 let lastHighlightedReadAlongElement = null;
@@ -150,6 +152,7 @@ let isReadAlongPaused = false;
 let readAlongSessionId = 0;
 let speedUpdateTimeout = null;
 const boundaryCapableVoices = new Set();
+const boundarySilentVoices = new Set();
 
 let renderTimeout;
 const handleStoryInputPreview = () => {
@@ -337,6 +340,9 @@ function updateReadingRate(val) {
         isReadAlongPaused = false;
         clearTimeout(speedUpdateTimeout);
         speedUpdateTimeout = setTimeout(() => {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
             startReadAlong();
         }, 100);
     }
@@ -440,9 +446,11 @@ async function startReadAlong() {
         scrollToWord(initialEl, true);
     }
 
+    let isFirstChunk = true;
     while (isReadingAlong && currentReadAlongIndex < storyWordElements.length && mySession === readAlongSessionId) {
         const range = computeNextSentenceRange(storyWordMetadata, currentReadAlongIndex);
-        const pauseAfterMs = await runSentenceRead(range, mySession);
+        const pauseAfterMs = await runSentenceRead(range, mySession, isFirstChunk);
+        isFirstChunk = false;
 
         currentReadAlongIndex = range.end + 1;
 
@@ -456,7 +464,7 @@ async function startReadAlong() {
     }
 }
 
-async function runSentenceRead(range, sessionId) {
+async function runSentenceRead(range, sessionId, isFirstChunk = false) {
     const text = dom.storyInput.value;
     const segment = buildSpeechSegment(text, storyWordMetadata, range, currentPronunciations);
     if (!segment.spokenText || segment.words.length === 0) {
@@ -467,6 +475,7 @@ async function runSentenceRead(range, sessionId) {
     let fallbackTimerId = null;
     let fallbackCursor = 0;
     let activeVoiceName = '';
+    let maxWordIndexInSegment = range.start;
 
     const clearFallbackTimer = () => {
         if (fallbackTimerId !== null) {
@@ -475,34 +484,42 @@ async function runSentenceRead(range, sessionId) {
         }
     };
 
+    // Strict monotonic forward progression prevents the highlight from ever retreating
+    // if a fallback step slightly precedes a native boundary or a voice emits a charIndex=0 clause event.
+    const advanceSegmentHighlight = (targetIndex, immediateScroll = false) => {
+        const clamped = Math.min(range.end, targetIndex);
+        if (clamped < maxWordIndexInSegment) return;
+        maxWordIndexInSegment = clamped;
+        currentReadAlongIndex = clamped;
+        highlightReadAlongWord(clamped, immediateScroll);
+    };
+
     // Cadence fallback keeps yellow word highlights moving smoothly when a browser voice
     // (such as Chrome's remote "Google US English") does not emit `onboundary` events.
-    // Yields immediately the moment any native `onboundary` word event arrives.
-    const scheduleFallbackStep = () => {
+    // Yields immediately and permanently once a voice proves it supports native `onboundary`.
+    const scheduleFallbackStep = (extraProbeMs = 0) => {
         clearFallbackTimer();
         if (nativeBoundarySeen || sessionId !== readAlongSessionId || !isReadingAlong) return;
         if (fallbackCursor >= segment.words.length - 1) return;
 
         const currentItem = segment.words[fallbackCursor];
-        const graceMs = activeVoiceName && boundaryCapableVoices.has(activeVoiceName) ? 140 : 0;
         const stepDelayMs = Math.max(
-            110,
-            Math.round(currentItem.estimatedDurationMs / Math.max(0.65, readingRate)) + graceMs
+            120,
+            Math.round(currentItem.estimatedDurationMs / Math.max(0.65, readingRate)) + extraProbeMs
         );
 
         fallbackTimerId = setTimeout(() => {
             fallbackTimerId = null;
             if (nativeBoundarySeen || sessionId !== readAlongSessionId || !isReadingAlong) return;
             if (isReadAlongPaused) {
-                fallbackTimerId = setTimeout(scheduleFallbackStep, 120);
+                fallbackTimerId = setTimeout(() => scheduleFallbackStep(0), 120);
                 return;
             }
             if (fallbackCursor + 1 < segment.words.length) {
                 fallbackCursor += 1;
                 const nextIdx = segment.words[fallbackCursor].wordIndex;
-                currentReadAlongIndex = nextIdx;
-                highlightReadAlongWord(nextIdx);
-                scheduleFallbackStep();
+                advanceSegmentHighlight(nextIdx);
+                scheduleFallbackStep(0);
             }
         }, stepDelayMs);
     };
@@ -514,33 +531,63 @@ async function runSentenceRead(range, sessionId) {
             (event) => {
                 if (sessionId !== readAlongSessionId || isReadAlongPaused || !isReadingAlong) return;
 
-                const resolvedIndex = resolveSegmentWordIndex(segment, event.charIndex || 0);
+                const charIdx = Number(event.charIndex) || 0;
+                const resolvedIndex = resolveSegmentWordIndex(segment, charIdx);
                 if (resolvedIndex === null) return;
 
-                if (resolvedIndex > range.start || (event.charIndex || 0) > 0) {
+                if (resolvedIndex > range.start || charIdx > 0) {
                     nativeBoundarySeen = true;
-                    if (activeVoiceName) boundaryCapableVoices.add(activeVoiceName);
+                    if (activeVoiceName) {
+                        boundaryCapableVoices.add(activeVoiceName);
+                        boundarySilentVoices.delete(activeVoiceName);
+                    }
                     clearFallbackTimer();
                 }
 
-                currentReadAlongIndex = resolvedIndex;
-                highlightReadAlongWord(resolvedIndex);
+                // Ignore spurious mid-sentence charIndex=0 resets emitted by some OS synthesizers at clause breaks
+                if (charIdx === 0 && maxWordIndexInSegment > range.start) {
+                    return;
+                }
+
+                advanceSegmentHighlight(resolvedIndex);
             },
             readingRate,
             {
                 isSingleWord: false,
-                cancelExisting: range.start === 0,
+                cancelExisting: isFirstChunk,
                 onStart: ({ voice } = {}) => {
                     if (sessionId !== readAlongSessionId || !isReadingAlong) return;
                     activeVoiceName = voice?.name || '';
+                    maxWordIndexInSegment = range.start;
                     currentReadAlongIndex = range.start;
-                    highlightReadAlongWord(range.start, range.start === 0);
+                    highlightReadAlongWord(range.start, isFirstChunk && range.start === 0);
+
                     if (segment.words.length > 1) {
-                        scheduleFallbackStep();
+                        if (activeVoiceName && boundaryCapableVoices.has(activeVoiceName)) {
+                            // Voice is proven to emit native word boundaries; do not race word-by-word fallback!
+                            // Arm only a long safety watchdog in case the OS stops emitting boundary events.
+                            scheduleFallbackStep(1600);
+                        } else if (activeVoiceName && boundarySilentVoices.has(activeVoiceName)) {
+                            scheduleFallbackStep(0);
+                        } else {
+                            // First sentence with an unknown voice: give native boundaries a brief lead
+                            scheduleFallbackStep(180);
+                        }
                     }
                 }
             }
         );
+
+        if (
+            !nativeBoundarySeen &&
+            activeVoiceName &&
+            segment.words.length >= 3 &&
+            sessionId === readAlongSessionId &&
+            isReadingAlong &&
+            !isReadAlongPaused
+        ) {
+            boundarySilentVoices.add(activeVoiceName);
+        }
     } finally {
         clearFallbackTimer();
     }
@@ -646,6 +693,7 @@ function handleSpeechStatusChange(isActive) {
 
 function resetReadingPointer() {
     karaokeSession.reset();
+    lastActiveKaraokeElement = null;
     storyWordElements.forEach((el) => {
         el.classList.remove('read-correct', 'read-skipped', 'read-help', 'read-active', 'read-misspoken');
     });
@@ -653,11 +701,21 @@ function resetReadingPointer() {
 }
 
 function updateActiveHighlight() {
-    storyWordElements.forEach((el) => el.classList.remove('read-active'));
     const pointer = karaokeSession.readingPointer;
-    if (sttManager && sttManager.isActive && pointer < storyWordElements.length) {
-        const nextWord = storyWordElements[pointer];
-        nextWord.classList.add('read-active');
+    const nextWord = (sttManager && sttManager.isActive && pointer < storyWordElements.length)
+        ? storyWordElements[pointer]
+        : null;
+
+    if (lastActiveKaraokeElement && lastActiveKaraokeElement !== nextWord) {
+        lastActiveKaraokeElement.classList.remove('read-active');
+        lastActiveKaraokeElement = null;
+    }
+
+    if (nextWord) {
+        if (nextWord !== lastActiveKaraokeElement) {
+            nextWord.classList.add('read-active');
+            lastActiveKaraokeElement = nextWord;
+        }
         scrollToWord(nextWord);
     }
 }
@@ -672,14 +730,18 @@ function markWord(index, status) {
     if (status === 'help') el.classList.add('read-help');
 }
 
-function handleSpeechResult({ final, interim }) {
+function handleSpeechResult(payload = {}) {
+    if (payload.segmentBoundary) {
+        karaokeSession.onSegmentBoundary();
+        return;
+    }
     if (storyWordElements.length === 0) return;
-    const storyWords = storyWordElements.map((el) => el.textContent);
 
     const outcome = karaokeSession.processResult({
-        final,
-        interim,
-        storyWords,
+        final: payload.final || '',
+        interim: payload.interim || '',
+        segmentIndex: payload.segmentIndex !== undefined ? payload.segmentIndex : null,
+        storyWords: storyWordsList,
         customPronunciations: currentPronunciations
     });
 
@@ -813,7 +875,10 @@ function renderStory() {
     });
 
     dom.storyDisplay.innerHTML = html;
+    lastHighlightedReadAlongElement = null;
+    lastActiveKaraokeElement = null;
     storyWordElements = Array.from(dom.storyDisplay.querySelectorAll('.speakable-word'));
+    storyWordsList = storyWordElements.map((el) => el.textContent);
     storyWordMetadata = storyWordElements.map((el) => ({
         start: parseInt(el.dataset.start, 10),
         end: parseInt(el.dataset.end, 10),

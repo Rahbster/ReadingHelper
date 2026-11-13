@@ -158,9 +158,13 @@ test('buildSpeechSegment & resolveSegmentWordIndex align highlights accurately e
 test('KaraokeMatcher matches homophones, digits, custom pronunciations, and tracks skips', () => {
     assert.strictEqual(isWordsMatch('3', 'three'), true);
     assert.strictEqual(isWordsMatch('their', "they're"), true);
+    assert.strictEqual(isWordsMatch('which', 'witch'), true);
+    assert.strictEqual(isWordsMatch('flu', 'flew'), true);
+    assert.strictEqual(isWordsMatch('whoosh', 'whoooosh'), true);
     assert.strictEqual(isWordsMatch('nite', 'knight'), true);
     assert.strictEqual(isWordsMatch('kernel', 'colonel', { colonel: 'kernel' }), true);
     assert.strictEqual(getPhoneticCode('phone'), 'fon');
+    assert.strictEqual(getPhoneticCode('witch'), getPhoneticCode('which'));
     assert.strictEqual(editDistance('forest', 'forrest'), 1);
 
     const session = new KaraokeSession();
@@ -173,6 +177,70 @@ test('KaraokeMatcher matches homophones, digits, custom pronunciations, and trac
     assert.strictEqual(res1.readingPointer, 5);
     assert.strictEqual(res1.completed, true);
     assert.deepStrictEqual(res1.trickyWords, ['magical']);
+});
+
+test('KaraokeSession handles streaming interim word prefixes, revisions, hyphenated words, and catch-up', () => {
+    // 1. Mid-syllable interim prefixes ("the mag" -> "the magnificent drag" -> "the magnificent dragon")
+    // must never slice words into "nificent" or "on"
+    const streamSession = new KaraokeSession();
+    const story1 = ['The', 'magnificent', 'dragon', 'gave', 'an', 'ear-splitting', 'roar'];
+
+    const step1 = streamSession.processResult({
+        interim: 'the mag',
+        segmentIndex: '1:0',
+        storyWords: story1
+    });
+    assert.strictEqual(step1.readingPointer, 1, 'Should match "The" and hold partial prefix "mag"');
+    assert.strictEqual(step1.marks.some((m) => m.status === 'misspoken'), false, 'Partial prefix must not mark misspoken');
+
+    const step2 = streamSession.processResult({
+        interim: 'the magnificent drag',
+        segmentIndex: '1:0',
+        storyWords: story1
+    });
+    assert.strictEqual(step2.readingPointer, 2, 'Should match full "magnificent" once spoken');
+
+    const step3 = streamSession.processResult({
+        interim: 'the magnificent, dragon gave an ear splitting',
+        segmentIndex: '1:0',
+        storyWords: story1
+    });
+    assert.strictEqual(step3.readingPointer, 6, 'Should survive comma insertion and match 2-word "ear splitting" to "ear-splitting"');
+
+    const step4 = streamSession.processResult({
+        interim: 'the magnificent, dragon gave an ear splitting roar',
+        segmentIndex: '1:0',
+        storyWords: story1
+    });
+    assert.strictEqual(step4.readingPointer, 7);
+    assert.strictEqual(step4.completed, true, 'Should detect story completion immediately even on interim');
+
+    // Subsequent final confirmation of the same completed segment should not double-trigger completed
+    const step5 = streamSession.processResult({
+        final: 'the magnificent, dragon gave an ear splitting roar.',
+        segmentIndex: '1:0',
+        storyWords: story1
+    });
+    assert.strictEqual(step5.completed, false, 'Should not fire duplicate completed event');
+
+    // 2. Contractions (2-to-1 and 1-to-2) + 6-word gap catch-up with 2-gram confirmation
+    const catchupSession = new KaraokeSession();
+    const story2 = ["Don't", 'do', 'not', 'stop', 'now', 'because', 'the', 'little', 'witch', 'flew', 'high'];
+    const c1 = catchupSession.processResult({
+        final: "do not don't",
+        segmentIndex: '1:0',
+        storyWords: story2
+    });
+    // "do not" -> matches "Don't" (0), "don't" -> matches "do" + "not" (1, 2)
+    assert.strictEqual(c1.readingPointer, 3);
+
+    // Simulate mic missing 5 words ("stop now because the little") and hearing "which flew" (6 words ahead of 3 -> index 8, 9)
+    const c2 = catchupSession.processResult({
+        interim: 'which flew',
+        segmentIndex: '1:1',
+        storyWords: story2
+    });
+    assert.strictEqual(c2.readingPointer, 10, '2-gram phrase "which flew" should catch up across missed words to "witch flew"');
 });
 
 test('GameManager groups minimal pairs and tracks mastered words through game over', () => {

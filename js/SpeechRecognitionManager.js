@@ -1,6 +1,6 @@
 /**
  * Manages Speech-to-Text using the Web Speech API.
- * Smoothly handles mobile browser auto-timeouts without UI flicker or tight error loops.
+ * Smoothly handles mobile/desktop browser auto-timeouts without UI flicker or dropped interim segments.
  */
 export class SpeechRecognitionManager {
     constructor(onResultCallback, onStatusChange, onErrorCallback = null) {
@@ -15,11 +15,13 @@ export class SpeechRecognitionManager {
         this.language = 'en-US';
         this._restartTimer = null;
         this._consecutiveErrors = 0;
+        this._sessionEpoch = 0;
 
         if (this.recognition) {
             this.recognition.continuous = true;
             this.recognition.interimResults = true;
             this.recognition.lang = this.language;
+            this.recognition.maxAlternatives = 1;
 
             this.recognition.onstart = () => {
                 this._consecutiveErrors = 0;
@@ -27,10 +29,18 @@ export class SpeechRecognitionManager {
             };
 
             this.recognition.onend = () => {
-                // Mobile browsers periodically end continuous sessions between breaths.
-                // Restart silently while still active instead of flickering status to false.
+                // Commit any open interim segment before restarting so words never reset across breaths
+                if (this.onResult) {
+                    this.onResult({ segmentBoundary: true });
+                }
+
+                // Mobile & desktop browsers periodically end continuous sessions between breaths.
+                // Restart almost immediately (30ms) on clean breath ends, backing off only on errors.
                 if (this.isActive) {
-                    const delay = Math.min(1000, 150 + this._consecutiveErrors * 250);
+                    this._sessionEpoch++;
+                    const delay = this._consecutiveErrors === 0
+                        ? 30
+                        : Math.min(1000, 150 + this._consecutiveErrors * 250);
                     clearTimeout(this._restartTimer);
                     this._restartTimer = setTimeout(() => {
                         if (!this.isActive) return;
@@ -56,8 +66,8 @@ export class SpeechRecognitionManager {
                     return;
                 }
 
-                // 'no-speech' is normal when the reader pauses; count other transient errors
-                if (event.error !== 'no-speech') {
+                // 'no-speech' and 'aborted' during stop/restart are normal; count other transient errors
+                if (event.error !== 'no-speech' && event.error !== 'aborted') {
                     this._consecutiveErrors++;
                     console.warn('[STT] Transient error:', event.error);
                     if (this._consecutiveErrors >= 4) {
@@ -81,21 +91,35 @@ export class SpeechRecognitionManager {
     }
 
     _processResult(event) {
-        let interimTranscript = '';
-        let finalTranscript = '';
+        if (!this.onResult) return;
+
+        let combinedInterim = '';
+        let firstInterimIdx = null;
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
+            const res = event.results[i];
+            const transcript = (res[0] && res[0].transcript ? res[0].transcript : '').trim().toLowerCase();
+            if (!transcript) continue;
+
+            if (res.isFinal) {
+                // Deliver each finalized utterance segment with its unique segment ID
+                this.onResult({
+                    final: transcript,
+                    interim: '',
+                    segmentIndex: `${this._sessionEpoch}:${i}`
+                });
             } else {
-                interimTranscript += event.results[i][0].transcript;
+                if (firstInterimIdx === null) firstInterimIdx = i;
+                combinedInterim += (combinedInterim ? ' ' : '') + transcript;
             }
         }
 
-        if (finalTranscript || interimTranscript) {
+        // Also deliver any active interim hypothesis immediately (even if an earlier segment just finalized!)
+        if (combinedInterim) {
             this.onResult({
-                final: finalTranscript.trim().toLowerCase(),
-                interim: interimTranscript.trim().toLowerCase()
+                final: '',
+                interim: combinedInterim,
+                segmentIndex: `${this._sessionEpoch}:${firstInterimIdx}`
             });
         }
     }
@@ -104,6 +128,7 @@ export class SpeechRecognitionManager {
         if (!this.recognition) return;
         clearTimeout(this._restartTimer);
         this._consecutiveErrors = 0;
+        this._sessionEpoch++;
         this.isActive = true;
         try {
             this.recognition.start();
